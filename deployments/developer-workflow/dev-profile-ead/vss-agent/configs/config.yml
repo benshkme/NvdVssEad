@@ -1,0 +1,375 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+general:
+  use_uvloop: true
+  front_end:
+    _type: fastapi
+    runner_class: vss_agents.api.custom_fastapi_worker.CustomFastApiFrontEndWorker
+    object_store: ${VSS_AGENT_OBJECT_STORE_TYPE}  # Set to local_object_store or remote_object_store
+    endpoints:
+    - path: /api/v1/videos
+      method: POST
+      description: Generate VST upload URL
+      function_name: video_upload_url
+    cors:
+      allow_origins: ['*']
+      allow_methods: ['*']
+      allow_headers: ['*']
+      allow_credentials: false
+  telemetry:
+    tracing:
+      phoenix:
+        _type: phoenix
+        endpoint: ${PHOENIX_ENDPOINT}/v1/traces
+        project: DEV-EAD-vss-agent-${VSS_AGENT_VERSION}
+        # Uncomment the following to enable Weave experiment tracking:
+        # weave:
+        #   _type: weave
+        #   project: ${WEAVE_PROJECT}
+
+object_stores:
+  local_object_store:
+    _type: in_memory
+
+functions:
+  video_upload_url:
+    _type: video_upload_url
+    vst_external_url: ${VST_EXTERNAL_URL}
+    agent_base_url: ${VSS_AGENT_EXTERNAL_URL}
+
+  video_understanding:
+    _type: video_understanding
+    vlm_name: ${VLM_MODEL_TYPE:-nim}_vlm
+    max_frames: 60
+    max_fps: 2  # for CR1, max fps is 2
+    min_pixels: 3136
+    max_pixels: 12845056
+    reasoning: false
+    video_url_tool: vst_video_clip
+    time_format: offset
+    vlm_mode: ${VLM_MODE}
+    internal_ip: ${HOST_IP}
+    external_ip: ${EXTERNAL_IP}
+    vst_internal_url: ${VST_INTERNAL_URL}
+    system_prompt: |
+      You are an accessibility assistant generating Extended Audio Descriptions (EAD) for blind and
+      visually impaired viewers. Your task is to describe the visual content of video segments in
+      precise, vivid, and accessible language.
+      IMPORTANT:
+      - Describe only what is VISIBLE on screen. Do not describe dialogue, sound effects, or music.
+      - Use present tense and active voice (e.g. "A woman walks towards the camera").
+      - Describe people by appearance, clothing, and action — not by assumed identity or name unless
+        a name is shown on screen.
+      - Include: setting/location, characters present, significant actions, on-screen text, facial
+        expressions and body language when relevant, camera movement and transitions.
+      - Be objective and concise. Avoid interpretation or emotional editorializing.
+      - Timestamp must be in pts format, seconds since the start of the video.
+      - Always provide a direct answer. Never return an empty response.
+
+
+  vst_video_duration:
+    _type: vst.duration
+    vst_internal_url: ${VST_INTERNAL_URL}
+    vst_external_url: ${VST_EXTERNAL_URL}
+
+  vst_video_clip:
+    _type: vst.video_clip
+    vst_internal_url: ${VST_INTERNAL_URL}
+    vst_external_url: ${VST_EXTERNAL_URL}
+
+  vst_snapshot:
+    _type: vst.snapshot
+    vst_internal_url: ${VST_INTERNAL_URL}
+    vst_external_url: ${VST_EXTERNAL_URL}
+
+  vst_video_list:
+    _type: vst.video_list
+    vst_internal_url: ${VST_INTERNAL_URL}
+
+  lvs_video_understanding:
+    _type: lvs_video_understanding
+    lvs_backend_url: ${LVS_BACKEND_URL}
+    model: ${VLM_NAME}
+    video_url_tool: vst_video_clip
+    vlm_mode: ${VLM_MODE}
+    internal_ip: ${HOST_IP}
+    external_ip: ${EXTERNAL_IP}
+    vst_internal_url: ${VST_INTERNAL_URL}
+    # Connection and timeout configuration
+    conn_timeout_ms: 5000
+    read_timeout_ms: 600000
+    # Video processing parameters for better event detection
+    chunk_duration: 10  # Split video into 10-second chunks (0 = entire video in one request)
+    num_frames_per_chunk: 20  # Sample 20 frames per chunk
+    # HITL Templates (shown for each query to the user during interaction)
+    hitl_scenario_template: |
+      Content Type (REQUIRED):
+      Please describe the type of video content being processed for audio description.
+
+      Examples: "documentary", "narrative film", "news broadcast", "educational video",
+                "sports coverage", "live event", "instructional / how-to"
+
+      Enter content type or press Submit to keep current value:
+    hitl_events_template: |
+      Visual Elements to Prioritise (REQUIRED):
+      Provide a comma-separated list of visual elements that are most important for
+      blind viewers to understand this content.
+
+      Examples:
+      - speaker identity, facial expressions, gestures, slide content, on-screen text
+      - character actions, scene changes, setting descriptions, props, wardrobe
+      - graphics, charts, captions, lower thirds, score overlays
+
+      Enter elements (comma-separated) or press Submit to keep current value:
+    hitl_objects_template: |
+      Named Characters or Key Subjects (OPTIONAL):
+      Provide a comma-separated list of named people or recurring subjects in this video,
+      or write "skip" to skip. This helps the VLM associate appearances with names.
+
+      Examples:
+      - John Smith (presenter, blue suit), Sarah Lee (interviewer)
+      - Product A (red box), Logo B (top-left watermark)
+
+      Enter subjects (comma-separated), "skip" to skip or press Submit to keep current value:
+    hitl_confirmation_template: |
+      Please review the above configuration before starting EAD generation.
+
+      **Options:**
+      - Press Submit (empty) → Confirm and begin audio description analysis
+      - Type `/redo` → Modify parameters
+      - Type `/cancel` → Cancel
+
+      Enter your choice or press Submit to proceed:
+    # Default values
+    default_scenario: "general video content"
+    default_events:
+    - scene changes and transitions
+    - speaker and character actions
+    - on-screen text and graphics
+    - setting and environment descriptions
+    - significant visual events
+
+  video_report_gen:
+    _type: video_report_gen
+    object_store: ${VSS_AGENT_OBJECT_STORE_TYPE}
+    base_url: ${VSS_AGENT_REPORTS_BASE_URL}
+    video_understanding_tool: video_understanding
+    lvs_video_understanding_tool: lvs_video_understanding
+    video_url_tool: vst_video_clip
+    picture_url_tool: vst_snapshot
+    vst_internal_url: ${VST_INTERNAL_URL}
+    vst_external_url: ${VST_EXTERNAL_URL}
+    vlm_prompt: |
+      You are generating Extended Audio Description (EAD) cues for blind and visually impaired viewers.
+      Describe every visually significant moment in this video segment.
+      For each cue, include: setting, people present (appearance and action), on-screen text,
+      camera movement, and scene transitions. Do NOT describe audio, dialogue, or music.
+      Use present tense and active voice throughout.
+      OUTPUT REQUIREMENTS:
+      [timestamp-timestamp] EAD description of the visual content.
+      EXAMPLE:
+      [0.0s-4.0s] A wide shot of a city street at dusk. Street lights flicker on. A woman in a
+      red coat walks briskly past the camera from left to right, carrying a briefcase.
+      [4.0s-12.0s] Cut to a close-up of a café window. Inside, a man in his thirties sits alone
+      at a table, staring at a laptop screen. The screen displays a spreadsheet with red figures.
+
+  report_agent:
+    _type: report_agent
+    log_level: INFO
+    # No Video Analytics MCP tools configured = Video(uploaded) Report mode
+    video_report_tool: video_report_gen
+
+llms:
+  # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
+  nim_llm:
+    _type: nim
+    model_name: ${LLM_NAME}
+    base_url: ${LLM_BASE_URL}/v1
+    max_tokens: 4096
+    temperature: 0.0
+
+  openai_llm:
+    _type: openai
+    model_name: ${LLM_NAME}
+    base_url: ${LLM_BASE_URL}/v1
+    max_tokens: 4096
+    temperature: 0.0
+
+  # --- VLM profiles (selected by VLM_MODEL_TYPE) ---
+  nim_vlm:
+    _type: nim
+    model_name: ${VLM_NAME}
+    base_url: ${VLM_BASE_URL}/v1
+    temperature: 0.0
+    max_tokens: 4096
+
+  openai_vlm:
+    _type: openai
+    model_name: ${VLM_NAME}
+    temperature: 0.0
+    max_tokens: 4096
+
+  vllm_vlm:
+    _type: openai
+    model_name: ${VLM_NAME}
+    base_url: ${VLM_BASE_URL}/v1
+    temperature: 0.0
+    max_tokens: 4096
+
+  # --- Others ---
+  eval_llm_judge:
+    _type: nim
+    model_name: ${EVAL_LLM_JUDGE_NAME}
+    base_url: ${EVAL_LLM_JUDGE_BASE_URL}/v1
+    max_tokens: 4096
+    temperature: 0.0
+
+workflow:
+  _type: top_agent
+  llm_name: ${LLM_MODEL_TYPE:-nim}_llm
+  log_level: INFO
+  max_iterations: 30
+  llm_reasoning: false
+  planning_enabled: true
+  tool_names:
+  - video_understanding
+  - vst_video_clip
+  - vst_snapshot
+  - vst_video_list
+  - vst_video_duration
+  subagent_names:
+  - report_agent
+  # yamllint disable rule:line-length
+  prompt: |
+    You are a routing agent for an Extended Audio Description (EAD) generation system.
+    Your job is to route user requests to the correct tool or agent to produce accessible
+    audio descriptions, visual summaries, chapter manifests, and enriched metadata for
+    long-form video content intended for blind and visually impaired viewers.
+    ## Routing Rules:
+      **vst_video_list** -
+      - Videos can be added/removed from the backend system. Do not rely on previous conversations.
+      - Call this tool to verify availability before processing any video.
+      - Examples: "What videos are available?", "List all uploaded videos", "Show me the video list"
+      **report_agent**
+      - Call when the user asks for a full EAD output, audio description report, chapter manifest,
+        metadata document, or any structured deliverable for a video.
+      - Always use lvs_video_understanding as the backend (long-form video processing).
+      - Examples: "Generate audio descriptions for this video", "Create the EAD file",
+        "Produce a chapter breakdown", "Generate the metadata enrichment for this video"
+      **video_understanding** - For quick visual queries about a short clip or specific timestamp.
+      - Use when video is less than 1 minute OR when user asks about a specific moment.
+      - Examples: "What is happening at 2:30?", "Describe this short clip", "What does the presenter
+        look like in this segment?"
+      - Do NOT use for full EAD generation of long videos.
+      **vst_video_clip** - For retrieving and displaying a video segment.
+      - CRITICAL: Always call vst_video_clip to get the URL. Never generate URLs yourself.
+      **vst_snapshot** - For retrieving a still frame at a specific timestamp.
+      - CRITICAL: Always call vst_snapshot to get the URL. Never generate URLs yourself.
+      **vst_video_duration** - Call this before processing to determine whether to use
+      video_understanding (short) or lvs_video_understanding (long).
+    ## Context: If the user does not specify a video name, use the most recently uploaded video.
+
+
+  tool_call_prompt: |
+    - ALWAYS include ALL required parameters when calling tools
+    - If a tool call fails with a validation error, RETRY IMMEDIATELY: Fix the error and call the tool again with correct parameters.
+    - Error Handling: if a tool fails more than 3 times, just return a summarized error message. Do not endlessly try again.
+
+  response_format_prompt: |
+    - Do not include phrases like "I should", "Let me", "The user".
+    - Convert json to markdown format.
+      - EXCEPTION: For queries about listing sensors, output sensors as plain text, NOT as code blocks or markdown code.
+    - Wrap urls in html tags. CRITICAL: ONLY do this when a url is EXACTLY the one returned from a tool call or the url is EXACTLY the same as one from the conversation history. NEVER generate urls yourself. NEVER modify an existing url to create a new url (e.g. changing timestamps, IDs, or any part of the url). If you need a url that wasn't returned by a tool call, you MUST call the appropriate tool to get it. Examples:
+      <video src="video_url" alt="Video Name">Video Name</video>
+      <image src="image_url" alt="Image Name">Image Name</image>
+  postprocessing:
+    enabled: true
+    validation_order:
+    - [url_validator]
+    validators:
+      url_validator:
+        internal_ip: ${HOST_IP}
+        timeout: 10.0
+        # Template variable: {issues} - list of failed URLs
+        feedback_template: |
+          The following URLs are not accessible: {issues}
+          You have a hallucinated URL in the response, consider removing it or calling the appropriate tool to fetch the correct URL.
+        # yamllint enable rule:line-length
+
+eval:
+  general:
+    workflow_alias: ${WEAVE_WORKFLOW_ALIAS}
+    output_dir: ${EVAL_DIR}/results
+    dataset:
+      _type: json
+      file_path: ${EVAL_DIR}/dataset.json
+      structure:
+        question_key: "query"
+
+  evaluators:
+    trajectory_evaluator:
+      _type: customized_trajectory_evaluator
+      llm_name: eval_llm_judge
+      track_agent_selected_tools_only: true
+      max_retries: 2
+      custom_prompt_template: |
+        You are an expert evaluator assessing an AI agent's performance on tool calling.
+
+        Question: {question}
+
+        Available Tools and Their Schemas:
+        {tool_schemas}
+
+        Agent's Actions and Tool Calls:
+        {agent_trajectory}
+
+        Agent's Final Answer:
+        {answer}
+
+        Reference/Expected Output:
+        {reference}
+
+        Evaluation Criteria:
+        1. **Tool Selection**: Did the agent select the appropriate tools for the task?
+        2. **Parameter Accuracy**: Were tool parameters correct according to the tool schemas above?
+        Check that all parameters match the expected types, required fields, and descriptions.
+        3. **Data Retrieval**: Did the agent successfully retrieve the necessary data? Sometimes the
+        data is not available, that should not be considered as a failure. As long as the tools are
+        called correctly, it should be considered as a success.
+        4. **Completeness**: Did the agent gather all required information to answer the question?
+        5. **Efficiency**: Did the agent avoid unnecessary or redundant tool calls?
+
+        IMPORTANT NOTES:
+
+        1. VLM Failure: The report_agent always will fail on VLM analysis. This is EXPECTED and
+           should NOT be considered a failure. As long as the correct tools are called, it should
+           be considered as a success and should be scored 1.0.
+
+        2. LLM Model Names in Trajectory: Some trajectory steps have tool names equal to LLM model names. These are NOT
+           actual tool calls. They are INTERNAL REASONING STEPS showing which LLM is thinking.
+
+           **CRITICAL: When evaluating tool selection, COMPLETELY IGNORE any steps where the tool
+           name is an LLM model name. Only evaluate steps where actual function tools are called.**
+
+        Scoring Guidelines:
+        - 1.0: Perfect execution - all criteria met, accurate answer
+        - 0.8-0.9: Excellent - minor issues but correct answer
+        - 0.6-0.7: Good - some issues but mostly correct
+        - 0.4-0.5: Fair - significant issues, partially correct
+        - 0.0-0.3: Poor - major issues, incorrect or incomplete answer
+
+        Think through your evaluation carefully, then output only a single number (your score from
+        0.0 to 1.0).

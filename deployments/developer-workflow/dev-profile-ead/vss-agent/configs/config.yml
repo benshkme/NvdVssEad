@@ -192,6 +192,51 @@ functions:
     # No Video Analytics MCP tools configured = Video(uploaded) Report mode
     video_report_tool: video_report_gen
 
+  # ===========================================================================
+  # EAD PIPELINE TOOLS
+  # ===========================================================================
+
+  caption_parser:
+    _type: caption_parser
+    # No configurable parameters — pure VTT/SRT parser.
+
+  scene_segmenter:
+    _type: scene_segmenter
+    duration_tool: vst_video_duration
+    # Default sensitivity: 0.5 (medium) → ~24s segments.
+    # Users can override per-request via the sensitivity input field.
+    # Sensitivity scale:
+    #   1.0 (maximum) →  ~5s segments
+    #   0.75 (high)   → ~10s segments
+    #   0.5  (medium) → ~24s segments  ← default
+    #   0.25 (low)    → ~55s segments
+    #   0.0  (minimum)→ ~120s segments
+    default_sensitivity: 0.5
+
+  visual_describer:
+    _type: visual_describer
+    video_understanding_tool: video_understanding
+    default_sensitivity: 0.5
+    # Max segments described concurrently. Increase on multi-GPU setups.
+    max_concurrent: 4
+    # Set to true for richer descriptions with cosmos-reason models (slower).
+    vlm_reasoning: false
+
+  chapter_generator:
+    _type: chapter_generator
+    llm_name: ${LLM_MODEL_TYPE:-nim}_llm
+    # Target chapter density. 6/hr on a 30-min video → ~3 chapters.
+    chapters_per_hour: 6.0
+    max_tokens: 4096
+
+  metadata_enricher:
+    _type: metadata_enricher
+    # No configurable parameters — pure JSON-LD assembler.
+
+  ead_formatter:
+    _type: ead_formatter
+    # No configurable parameters — output format is specified per-request.
+
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
   nim_llm:
@@ -250,6 +295,13 @@ workflow:
   - vst_snapshot
   - vst_video_list
   - vst_video_duration
+  # EAD pipeline tools
+  - caption_parser
+  - scene_segmenter
+  - visual_describer
+  - chapter_generator
+  - metadata_enricher
+  - ead_formatter
   subagent_names:
   - report_agent
   # yamllint disable rule:line-length

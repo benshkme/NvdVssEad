@@ -237,6 +237,26 @@ functions:
     _type: ead_formatter
     # No configurable parameters — output format is specified per-request.
 
+  # ===========================================================================
+  # EAD ORCHESTRATION AGENT
+  # ===========================================================================
+
+  ead_agent:
+    _type: ead_agent
+    # Tool references — must match the function names defined above
+    caption_parser_tool: caption_parser
+    scene_segmenter_tool: scene_segmenter
+    visual_describer_tool: visual_describer
+    chapter_generator_tool: chapter_generator
+    metadata_enricher_tool: metadata_enricher
+    ead_formatter_tool: ead_formatter
+    # Defaults (all overridable per-request via input fields)
+    default_sensitivity: 0.5
+    default_output_format: all
+    default_vlm_reasoning: false
+    # Set to false to skip the HITL confirmation step (e.g. for batch/automated runs)
+    hitl_enabled: true
+
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
   nim_llm:
@@ -303,6 +323,7 @@ workflow:
   - metadata_enricher
   - ead_formatter
   subagent_names:
+  - ead_agent
   - report_agent
   # yamllint disable rule:line-length
   prompt: |
@@ -311,27 +332,45 @@ workflow:
     audio descriptions, visual summaries, chapter manifests, and enriched metadata for
     long-form video content intended for blind and visually impaired viewers.
     ## Routing Rules:
+      **ead_agent** — PRIMARY agent for all EAD generation tasks.
+      - Call when the user asks to generate audio descriptions, EAD files, accessibility
+        descriptions, a chapter manifest, metadata enrichment, or WebVTT/TTML output for a video.
+      - This agent runs the full pipeline end-to-end with a HITL confirmation step.
+      - Pass sensitivity (0.0–1.0) if the user specifies a level of detail.
+      - Pass captions_content if the user provides a VTT or SRT file for context.
+      - Examples:
+          "Generate audio descriptions for this video"
+          "Create the EAD file for myvideo.mp4"
+          "Produce a chapter breakdown with descriptions"
+          "Generate accessibility descriptions at high detail"
+          "Run EAD with the subtitle file I uploaded"
+          "Create the metadata enrichment document"
+
       **vst_video_list** -
       - Videos can be added/removed from the backend system. Do not rely on previous conversations.
       - Call this tool to verify availability before processing any video.
       - Examples: "What videos are available?", "List all uploaded videos", "Show me the video list"
-      **report_agent**
-      - Call when the user asks for a full EAD output, audio description report, chapter manifest,
-        metadata document, or any structured deliverable for a video.
-      - Always use lvs_video_understanding as the backend (long-form video processing).
-      - Examples: "Generate audio descriptions for this video", "Create the EAD file",
-        "Produce a chapter breakdown", "Generate the metadata enrichment for this video"
-      **video_understanding** - For quick visual queries about a short clip or specific timestamp.
-      - Use when video is less than 1 minute OR when user asks about a specific moment.
-      - Examples: "What is happening at 2:30?", "Describe this short clip", "What does the presenter
-        look like in this segment?"
-      - Do NOT use for full EAD generation of long videos.
+
+      **report_agent** -
+      - Call only when the user explicitly asks for a surveillance-style or summary report,
+        NOT when they ask for EAD or audio description output.
+      - Examples: "Generate a report for this video", "Create an analysis report"
+
+      **video_understanding** - For quick visual queries about a specific moment or short clip.
+      - Use when video is less than 1 minute OR when user asks about a specific timestamp.
+      - Do NOT use for full EAD generation.
+      - Examples: "What is happening at 2:30?", "Describe this short clip"
+
+      **caption_parser** - Call standalone only if the user wants to inspect parsed caption cues.
+      - Normally caption parsing is handled automatically inside ead_agent when captions_content
+        is provided. Only call this tool directly if the user asks to preview or validate captions.
+
       **vst_video_clip** - For retrieving and displaying a video segment.
       - CRITICAL: Always call vst_video_clip to get the URL. Never generate URLs yourself.
+
       **vst_snapshot** - For retrieving a still frame at a specific timestamp.
       - CRITICAL: Always call vst_snapshot to get the URL. Never generate URLs yourself.
-      **vst_video_duration** - Call this before processing to determine whether to use
-      video_understanding (short) or lvs_video_understanding (long).
+
     ## Context: If the user does not specify a video name, use the most recently uploaded video.
 
 

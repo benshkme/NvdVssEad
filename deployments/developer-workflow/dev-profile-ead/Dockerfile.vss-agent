@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Custom VSS Agent image for the EAD (Extended Audio Description) profile.
+#
+# Extends the official NVIDIA VSS agent image with the EAD tool suite:
+#   - caption_parser     : VTT/SRT subtitle parser
+#   - scene_segmenter    : sensitivity-controlled video segmentation
+#   - visual_describer   : VLM-based per-segment EAD description generator
+#   - chapter_generator  : LLM-based chapter title and summary creator
+#   - metadata_enricher  : JSON-LD VideoObject metadata assembler
+#   - ead_formatter      : WebVTT + TTML output renderer
+#   - ead_agent          : end-to-end pipeline orchestrator
+#
+# Build context must be the repository root so agent/ is accessible:
+#   docker build -f deployments/developer-workflow/dev-profile-ead/Dockerfile.vss-agent \
+#                -t vss-agent-ead:3.1.0 .
+
+ARG VSS_AGENT_VERSION=3.1.0
+FROM nvcr.io/nvidia/vss-core/vss-agent:${VSS_AGENT_VERSION}
+
+# Copy the updated vss_agents source tree (includes new EAD tools and
+# updated register.py files that import them).
+WORKDIR /vss-agent-ead
+COPY agent/pyproject.toml ./pyproject.toml
+COPY agent/src/ ./src/
+
+# Install the updated package into the container's existing virtualenv.
+# --no-deps : skip dependency resolution — all deps are already in the base image.
+# -e        : editable install so Python resolves imports from /vss-agent-ead/src/.
+#             This takes precedence over the original vss_agents installation and
+#             re-registers all NAT component entry points with our additions.
+RUN /vss-agent/.venv/bin/pip install --no-deps --no-build-isolation -e .

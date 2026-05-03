@@ -14,6 +14,21 @@
 # limitations under the License.
 
 services:
+  # Build the custom EAD agent image on top of the official NVIDIA VSS agent.
+  # The image name (vss-agent-ead) is set via VSS_AGENT_IMAGE in dev-profile-ead/.env,
+  # which overrides the default image reference in vss-agent-docker-compose.yml.
+  # Docker Compose only builds this if the image does not already exist locally;
+  # pass --build to force a rebuild after updating the EAD tool source files.
+  vss-agent:
+    build:
+      context: ${MDX_SAMPLE_APPS_DIR}/..
+      dockerfile: ${MDX_SAMPLE_APPS_DIR}/developer-workflow/dev-profile-ead/Dockerfile.vss-agent
+      args:
+        VSS_AGENT_VERSION: ${VSS_AGENT_VERSION:-3.1.0}
+    image: vss-agent-ead:${VSS_AGENT_VERSION:-3.1.0}
+    profiles:
+      - bp_developer_ead_2d
+
   kibana-init-container-ead:
     build:
       context: $MDX_SAMPLE_APPS_DIR/developer-workflow/dev-profile-ead

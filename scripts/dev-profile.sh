@@ -502,7 +502,7 @@ function process_args() {
     fi
 
     # Validate profile value
-    _valid_profiles=('base' 'lvs' 'search' 'alerts')
+    _valid_profiles=('base' 'lvs' 'search' 'alerts' 'ead')
     if [[ -n "${profile}" ]]; then
       if ! contains_element "${profile}" "${_valid_profiles[@]}"; then
         echo "[ERROR] Invalid profile: ${profile}. Must be one of: base, lvs, search, alerts"
@@ -1352,7 +1352,7 @@ function state_down() {
   local _profile_dir_names _profile_dir_name _generated_env
 
   echo "[INFO] Cleaning up generated.env files from all profiles..."
-  _profile_dir_names=('base' 'lvs' 'search' 'alerts')
+  _profile_dir_names=('base' 'lvs' 'search' 'alerts' 'ead')
   for _profile_dir_name in "${_profile_dir_names[@]}"; do
     _generated_env="${deployment_directory}/developer-workflow/dev-profile-${_profile_dir_name}/generated.env"
     if [[ -f "${_generated_env}" ]]; then

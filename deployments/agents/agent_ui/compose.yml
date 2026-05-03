@@ -17,7 +17,7 @@ services:
 
   vss-ui:
     image: nvcr.io/nvidia/vss-core/vss-agent-ui:3.1.0
-    profiles: ["bp_wh_2d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     container_name: metropolis-vss-ui
     ports:
       - 3000:3000

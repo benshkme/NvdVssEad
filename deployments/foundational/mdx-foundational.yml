@@ -18,7 +18,7 @@ services:
   phoenix:
     container_name: phoenix
     image: 'arizephoenix/phoenix:version-8.12.1'
-    profiles: ["bp_wh_2d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     environment:
       PHOENIX_WORKING_DIR: '/.phoenix/'
     volumes:
@@ -36,7 +36,7 @@ services:
     environment:
       ES_JAVA_OPTS: "-Xmx1024m -Xms256m"
       discovery.type: single-node
-    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     volumes:
       - $MDX_SAMPLE_APPS_DIR/foundational/elk/configs/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
       - mdx-elastic-data:/tmp/elastic/data:rw
@@ -55,7 +55,7 @@ services:
       context: $MDX_SAMPLE_APPS_DIR/foundational
       dockerfile: Dockerfiles/elastic-init.Dockerfile
       network: "host"
-    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     network_mode: "host"
     container_name: mdx-elasticsearch-init
     environment:
@@ -148,7 +148,7 @@ services:
 
   redis:
     image: redis:8.2.2-alpine
-    profiles: ["bp_wh_2d","bp_wh_redis_2d","bp_wh_redis_3d","bp_wh_kafka_2d","bp_wh_kafka_3d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_wh_redis_2d","bp_wh_redis_3d","bp_wh_kafka_2d","bp_wh_kafka_3d","bp_smc_2d","bp_ps_2d","bp_developer_base_2d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     restart: always
     command: redis-server /config/redis.conf
     network_mode: host
@@ -161,7 +161,7 @@ services:
   kibana:
     image: docker.elastic.co/kibana/kibana:9.3.0
     network_mode: "host"
-    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_wh_2d","bp_wh_kafka_2d${MINIMAL_PROFILE:+_extended}","bp_wh_kafka_3d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_2d${MINIMAL_PROFILE:+_extended}","bp_wh_redis_3d${MINIMAL_PROFILE:+_extended}","bp_smc_2d","bp_ps_2d","playback_kafka_2d","playback_kafka_3d","playback_redis_2d","playback_redis_3d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv", "bp_developer_alerts_2d_vlm"]
     volumes:
       - $MDX_SAMPLE_APPS_DIR/foundational/elk/configs/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
     environment:

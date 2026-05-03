@@ -20,6 +20,7 @@ services:
     - "bp_developer_base_2d_proxy"
     - "bp_developer_search_2d_proxy"
     - "bp_developer_lvs_2d_proxy"
+    - "bp_developer_ead_2d_proxy"
     - "bp_developer_alerts_2d_cv_proxy"
     - "bp_developer_alerts_2d_vlm_proxy"
     container_name: vss-proxy

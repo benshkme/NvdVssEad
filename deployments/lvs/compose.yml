@@ -18,7 +18,7 @@ services:
     image: ${CONTAINER_IMAGE:-nvcr.io/nvidia/vss-core/vss-long-video-summarization:3.1.0}
     container_name: lvs-server
 
-    profiles: ["bp_developer_lvs_2d"]
+    profiles: ["bp_developer_lvs_2d","bp_developer_ead_2d"]
 
     # GPU configuration
     deploy:

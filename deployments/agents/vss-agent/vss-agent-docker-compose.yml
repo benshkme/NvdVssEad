@@ -73,6 +73,7 @@ services:
     - bp_developer_base_2d
     - bp_developer_search_2d
     - bp_developer_lvs_2d
+    - bp_developer_ead_2d
     - bp_developer_alerts_2d_cv
     - bp_developer_alerts_2d_vlm
     environment:

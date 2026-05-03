@@ -33,7 +33,6 @@ absorbs any remainder shorter than half a chunk to avoid very short tail
 segments.
 """
 
-from __future__ import annotations
 
 import json
 import logging

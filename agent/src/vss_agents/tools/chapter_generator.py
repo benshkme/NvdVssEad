@@ -30,7 +30,6 @@ The LLM is instructed to return a JSON array. A fallback divider is applied if
 the LLM response cannot be parsed — it creates equal-size chapters automatically.
 """
 
-from __future__ import annotations
 
 import json
 import logging

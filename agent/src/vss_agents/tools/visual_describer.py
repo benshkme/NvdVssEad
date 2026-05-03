@@ -31,7 +31,6 @@ Segments are processed concurrently (up to max_concurrent tasks) to keep
 processing time proportional to video length rather than segment count.
 """
 
-from __future__ import annotations
 
 import asyncio
 import json

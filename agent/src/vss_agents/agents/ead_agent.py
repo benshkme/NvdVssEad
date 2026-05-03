@@ -35,7 +35,6 @@ Configuration mirrors the EAD tool suite in config.yml; all tool names are
 FunctionRef fields so they can be remapped per deployment.
 """
 
-from __future__ import annotations
 
 import json
 import logging

@@ -15,7 +15,6 @@
 
 """Data models for the Extended Audio Description (EAD) pipeline."""
 
-from __future__ import annotations
 
 import math
 from typing import Literal

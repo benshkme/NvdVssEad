@@ -30,7 +30,6 @@ The document includes:
   - Accessibility metadata: WCAG features, hazard classification
 """
 
-from __future__ import annotations
 
 import json
 import logging

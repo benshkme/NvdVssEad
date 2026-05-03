@@ -26,7 +26,6 @@ Supports:
   - Auto-detection based on content
 """
 
-from __future__ import annotations
 
 import json
 import logging

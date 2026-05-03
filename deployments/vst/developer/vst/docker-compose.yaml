@@ -19,7 +19,7 @@ include:
 services:
   sensor-ms-dev:
     image: ${VST_SENSOR_IMAGE}
-    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
     user: "0:0"
     runtime: nvidia
     entrypoint: ["/bin/bash", "-c", "exec /home/vst/vst_release/launch_vst"]
@@ -57,7 +57,7 @@ services:
 
   centralizedb-dev:
     image: ${POSTGRES_IMAGE}
-    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
     user: "0:0"
     environment:
       - POSTGRES_USER=${CENTRALIZE_DB_USERNAME}
@@ -85,7 +85,7 @@ services:
 
   vst-ingress-dev:
     image: ${NGINX_IMAGE}
-    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
     user: "0:0"
     environment:
       - HOST_IP=${HOST_IP}
@@ -116,7 +116,7 @@ services:
 
   vst-mcp-dev:
     image: ${VST_MCP_IMAGE}
-    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
+    profiles: ["bp_developer_base_2d","bp_developer_search_2d","bp_developer_lvs_2d","bp_developer_ead_2d","bp_developer_alerts_2d_cv","bp_developer_alerts_2d_vlm"]
     user: "0:0"
     environment:
       - MCP_GATEWAY_CPP_API_BASE_URL=${MCP_GATEWAY_CPP_API_BASE_URL}

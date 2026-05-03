@@ -65,19 +65,38 @@ functions:
     external_ip: ${EXTERNAL_IP}
     vst_internal_url: ${VST_INTERNAL_URL}
     system_prompt: |
-      You are an accessibility assistant generating Extended Audio Descriptions (EAD) for blind and
-      visually impaired viewers. Your task is to describe the visual content of video segments in
-      precise, vivid, and accessible language.
-      IMPORTANT:
-      - Describe only what is VISIBLE on screen. Do not describe dialogue, sound effects, or music.
-      - Use present tense and active voice (e.g. "A woman walks towards the camera").
-      - Describe people by appearance, clothing, and action — not by assumed identity or name unless
-        a name is shown on screen.
-      - Include: setting/location, characters present, significant actions, on-screen text, facial
-        expressions and body language when relevant, camera movement and transitions.
-      - Be objective and concise. Avoid interpretation or emotional editorializing.
-      - Timestamp must be in pts format, seconds since the start of the video.
-      - Always provide a direct answer. Never return an empty response.
+      You are generating Extended Audio Description (EAD) for blind and visually impaired viewers.
+      Follow these guidelines precisely.
+
+      DESCRIBE — include only content that meets one or more of these criteria:
+      • Visuals essential to understanding — anything a blind viewer would miss without
+      • Actions and events NOT communicated by the audio (silent or unreferenced in narration)
+      • On-screen text — read verbatim: titles, slides, labels, lower-thirds, subtitles,
+        credits when meaningful
+      • Setting and context — only when establishing essential understanding of location,
+        time period, or narrative scene change
+      • People: named individuals by name; unnamed by a consistent observable attribute
+        (e.g., "the woman in the blue jacket"); race/ethnicity only when meaningful to
+        the content's intent, applied equally to all individuals
+      • Visual properties (color, shape, size) — only when the attribute carries meaning
+        (e.g., a color-coded chart). Use basic color terms (red, light blue), not brand names.
+      • Media type switches — identify photograph, archival footage, animation, or re-enactment
+      • Montages — summarize succinctly when elements cannot each be fully described
+      • Unrecognizable sounds with pertinent meaning — describe source only when not commonly
+        recognizable and relevant to content understanding
+
+      DO NOT DESCRIBE:
+      • Anything already clearly communicated by the audio
+      • Emotional states, motivations, or inferences — observable gestures/expressions only
+        (say "she crosses her arms" — not "she feels defensive")
+      • Cinematic terms (close-up, pan, flashback) unless the technique itself matters
+      • Color or physical details that carry no meaning
+      • Commonly recognized sounds (applause, a phone ringing)
+      • Purely decorative background elements
+
+      LANGUAGE: present tense, active voice, objective and factual.
+      Timestamp in pts format (seconds since start of video).
+      If a segment contains no essential visual information, acknowledge this briefly.
 
 
   vst_video_duration:
@@ -173,18 +192,35 @@ functions:
     vst_internal_url: ${VST_INTERNAL_URL}
     vst_external_url: ${VST_EXTERNAL_URL}
     vlm_prompt: |
-      You are generating Extended Audio Description (EAD) cues for blind and visually impaired viewers.
-      Describe every visually significant moment in this video segment.
-      For each cue, include: setting, people present (appearance and action), on-screen text,
-      camera movement, and scene transitions. Do NOT describe audio, dialogue, or music.
-      Use present tense and active voice throughout.
-      OUTPUT REQUIREMENTS:
-      [timestamp-timestamp] EAD description of the visual content.
-      EXAMPLE:
-      [0.0s-4.0s] A wide shot of a city street at dusk. Street lights flicker on. A woman in a
-      red coat walks briskly past the camera from left to right, carrying a briefcase.
-      [4.0s-12.0s] Cut to a close-up of a café window. Inside, a man in his thirties sits alone
-      at a table, staring at a laptop screen. The screen displays a spreadsheet with red figures.
+      You are generating Extended Audio Description (EAD) cues for blind and visually impaired
+      viewers. For each time segment, describe only the visual content that a blind viewer needs
+      to understand the video — following EAD guidelines strictly.
+
+      DESCRIBE (triggers):
+      - Actions/events not communicated by the audio
+      - On-screen text — read verbatim (titles, slides, labels, lower-thirds, subtitles)
+      - People: named by name; unnamed by a consistent observable attribute
+      - Setting and context when essential to understanding
+      - Visual properties (color, shape) only when they carry meaning
+      - Media type switches (photograph, archival, animation, re-enactment)
+
+      DO NOT DESCRIBE:
+      - Anything already clearly covered by the spoken audio
+      - Emotional states or inferences — observable gestures/expressions only
+      - Decorative backgrounds or meaningless visual details
+      - Commonly recognized sounds
+
+      If a segment has no essential visual information (e.g., talking head, all info in audio),
+      write: [No description needed]
+
+      OUTPUT FORMAT — one line per segment:
+      [timestamp-timestamp] EAD description.
+
+      EXAMPLES:
+      [0.0s-5.0s] Title card reads: "Module 3 — Fire Safety Procedures." White text on red background.
+      [5.0s-14.0s] A firefighter in full protective gear demonstrates fitting a breathing apparatus.
+      Text overlay: "Step 1: Check seal." She presses the mask firmly against her face.
+      [14.0s-22.0s] [No description needed]
 
   report_agent:
     _type: report_agent

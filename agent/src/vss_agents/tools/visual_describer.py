@@ -47,8 +47,9 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from vss_agents.data_models.ead import EADCue
+from vss_agents.data_models.ead import NO_DESCRIPTION_NEEDED
 from vss_agents.data_models.ead import SceneSegment
-from vss_agents.data_models.ead import sensitivity_to_change_description
+from vss_agents.data_models.ead import sensitivity_to_priority_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -57,60 +58,107 @@ _MAX_CONCURRENT_DEFAULT = 4
 
 
 def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
-    """Construct the VLM user prompt for a single EAD segment."""
-    change_desc = sensitivity_to_change_description(sensitivity)
+    """
+    Construct a guidelines-aligned VLM prompt for a single EAD segment.
 
-    # Caption context block — injected only when captions exist for this segment
-    caption_block = ""
+    Implements the full EAD describe/do-not-describe ruleset and maps the
+    sensitivity parameter to the EAD priority hierarchy levels.
+    """
+    priority_guidance = sensitivity_to_priority_guidance(sensitivity)
+
+    # Audio context block — present only when captions overlap this segment.
+    # Used to prevent re-describing audio content and to avoid verbatim repetition.
+    audio_block = ""
     if segment.caption_context.strip():
-        caption_block = (
-            f"\nDIALOGUE / SPEECH CONTEXT (for reference only — "
-            f"do NOT reproduce verbatim in your description):\n"
+        audio_block = (
+            f"\n── AUDIO CONTEXT (spoken dialogue/narration during this segment) ──\n"
             f'"{segment.caption_context.strip()}"\n'
+            f"Do NOT describe anything already clearly communicated by the above audio.\n"
+            f"Do NOT reproduce this text verbatim in your description.\n"
         )
 
-    # Detail level guidance based on sensitivity
-    if sensitivity >= 0.75:
-        detail_guidance = (
-            "Provide a detailed, sentence-level description. Note subtle visual elements: "
-            "facial expressions, hand gestures, minor background details, camera movement, "
-            "and moment-to-moment action. Each visual change should be described."
-        )
-    elif sensitivity >= 0.5:
-        detail_guidance = (
-            "Provide a clear, moderately detailed description. Cover the main visual action, "
-            "characters and their activities, the setting, and any significant visual transitions."
-        )
-    elif sensitivity >= 0.25:
-        detail_guidance = (
-            "Provide a concise description focused on the primary visual content: "
-            "where we are, who is present, and what the main action is. "
-            "You do not need to describe every subtle detail."
-        )
-    else:
-        detail_guidance = (
-            "Provide a brief, high-level description of the scene: the setting, "
-            "the main subject or action, and any significant visual events. "
-            "Avoid over-describing transient details."
-        )
+    return f"""\
+You are generating an Extended Audio Description (EAD) cue for blind and visually impaired viewers.
+Segment {segment.index + 1} of the video — {segment.start_seconds:.1f}s to {segment.end_seconds:.1f}s.
+{audio_block}
+━━━ WHAT TO DESCRIBE ━━━
 
-    return (
-        f"You are generating an Extended Audio Description (EAD) cue for blind and visually "
-        f"impaired viewers. This is segment {segment.index + 1}, covering "
-        f"{segment.start_seconds:.1f}s – {segment.end_seconds:.1f}s of the video.\n"
-        f"{caption_block}\n"
-        f"DESCRIPTION RULES:\n"
-        f"- Describe ONLY what is visible on screen. Do not mention audio, music, or dialogue.\n"
-        f"- Use present tense and active voice (e.g. 'A man walks towards the camera').\n"
-        f"- Describe people by appearance, clothing, and action — not by assumed name unless "
-        f"  a name appears on screen.\n"
-        f"- Include: setting/location, people present, their actions and expressions, "
-        f"  on-screen text or graphics, and camera movement or transitions.\n"
-        f"- Be objective and factual. Avoid interpretation or emotional editorialising.\n"
-        f"- This segment is sensitive to: {change_desc}.\n\n"
-        f"{detail_guidance}\n\n"
-        f"OUTPUT: Write one concise paragraph of visual description for this segment only."
-    )
+Describe only visual content that meets one or more of these criteria:
+
+1. ESSENTIAL VISUALS — anything that, if omitted, would leave a blind viewer unable to follow,
+   understand, or achieve the intended learning outcome of this content.
+
+2. ACTIONS AND EVENTS not already communicated by the audio above — physical actions, scene events,
+   and cause-and-effect sequences that occur silently or are unreferenced in the narration.
+
+3. ON-SCREEN TEXT — read verbatim:
+   • Titles, headings, labels, links, presenter names, lower-thirds
+   • Subtitled or translated foreign-language speech (read verbatim)
+   • Text in charts, diagrams, slides, or graphics
+   • Opening/closing credits when they convey meaningful information
+
+4. SETTING AND CONTEXT — only when establishing essential understanding:
+   • Time period, location, environment when relevant to meaning
+   • Scene changes if they affect understanding of the narrative
+   • Time passages only when there is objective visual evidence (not inference)
+
+5. CHARACTERS AND PEOPLE:
+   • Named individuals: identify by name
+   • Unnamed individuals: use a consistent, observable attribute (e.g., "the woman in the blue jacket")
+   • Describe race/ethnicity only when meaningful to the content's intent — and apply equally to
+     BIPOC and white individuals
+   • Describe significant physical characteristics only when relevant to the content
+     (e.g., a patient's presentation in a medical training video)
+
+6. VISUAL PROPERTIES — only when comprehension depends on them:
+   • Shape, size, texture, color — only when the attribute carries meaning (e.g., a color-coded chart,
+     two differently shaped tools being compared)
+   • Use basic color terms (red, light blue) — not brand names or subjective descriptors
+
+7. MEDIA TYPE — identify when content switches to: photograph, archival footage, animation,
+   or re-enactment. Viewers need this to interpret credibility and tone.
+
+8. MONTAGES — describe when time allows; summarizing is acceptable when individual elements
+   cannot each be fully described.
+
+9. UNRECOGNIZABLE SOUNDS WITH PERTINENT MEANING — describe the source if the sound is not
+   commonly recognizable AND it matters to the content (e.g., an ambiguous mechanical sound
+   in a safety training video).
+
+━━━ WHAT NOT TO DESCRIBE ━━━
+
+• Anything already clearly communicated by the audio above.
+• Emotional states, motivations, or inferences — describe observable gestures and expressions
+  only. Say "she crosses her arms and looks away" — NOT "she feels defensive."
+• Cinematic/technical terms (close-up, pan, flashback) unless the technique itself is important
+  to the viewer's understanding.
+• Color or physical details when they carry no meaning (e.g., the color of a background wall
+  in a talking-head interview).
+• Commonly recognized sounds (applause, a phone ringing).
+• Purely decorative background elements, stylistic choices, or aesthetic details that do not
+  affect understanding.
+
+━━━ SPECIAL CASE — NO DESCRIPTION NEEDED ━━━
+
+If this segment contains NO visual information essential for understanding — for example, a
+person talking directly to camera with no slides, text, demonstrations, or visual events, and
+all relevant information is already present in the spoken audio — output EXACTLY this token
+and nothing else:
+
+{NO_DESCRIPTION_NEEDED}
+
+━━━ PRIORITY HIERARCHY FOR THIS SEGMENT ━━━
+
+{priority_guidance}
+
+━━━ LANGUAGE RULES ━━━
+
+• Present tense, active voice: "A man walks towards the camera" — not "A man is seen walking."
+• Objective and factual — no interpretation, opinion, or emotional commentary.
+• Be proportional: the description length should match the segment duration and information density.
+
+OUTPUT: One concise paragraph of EAD description for this segment, or {NO_DESCRIPTION_NEEDED}.\
+"""
 
 
 class VisualDescriberConfig(FunctionBaseConfig, name="visual_describer"):
@@ -232,13 +280,24 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
                             "vlm_reasoning": use_reasoning,
                         }
                     )
-                    description = str(result).strip() if result else ""
-                    if not description:
-                        description = f"[Segment {segment.index + 1}: no visual description returned]"
-                    logger.debug(f"Segment {segment.index}: described ({len(description)} chars)")
+                    raw = str(result).strip() if result else ""
+
+                    # VLM signalled that this segment needs no description
+                    # (talking-head with no slides/text/visual events, all info in audio).
+                    # Store as empty string so the formatter silently skips it.
+                    if NO_DESCRIPTION_NEEDED in raw:
+                        description = ""
+                        logger.info(f"Segment {segment.index}: no description needed (VLM signal)")
+                    elif not raw:
+                        description = ""
+                        logger.warning(f"Segment {segment.index}: VLM returned empty response")
+                    else:
+                        description = raw
+                        logger.debug(f"Segment {segment.index}: described ({len(description)} chars)")
+
                 except Exception as e:
                     logger.error(f"VLM call failed for segment {segment.index}: {e}")
-                    description = f"[Segment {segment.index + 1}: description unavailable — {e}]"
+                    description = ""
 
             return EADCue(
                 index=segment.index,
@@ -250,7 +309,12 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
         cues = await asyncio.gather(*[_describe_segment(seg) for seg in segments])
         cues_sorted = sorted(cues, key=lambda c: c.index)
 
-        logger.info(f"Generated {len(cues_sorted)} EAD cues for '{input.sensor_id}'")
+        described = sum(1 for c in cues_sorted if c.description)
+        skipped = len(cues_sorted) - described
+        logger.info(
+            f"Visual description complete for '{input.sensor_id}': "
+            f"{described} cues with descriptions, {skipped} skipped (no visual info needed)"
+        )
         return json.dumps([c.model_dump() for c in cues_sorted], indent=2)
 
     yield FunctionInfo.create(

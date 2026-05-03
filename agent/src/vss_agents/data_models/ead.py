@@ -227,6 +227,15 @@ def sensitivity_to_chunk_duration(sensitivity: float) -> float:
     return math.exp(log_max - s * (log_max - log_min))
 
 
+NO_DESCRIPTION_NEEDED = "[NO_DESCRIPTION_NEEDED]"
+"""
+Sentinel returned by the VLM when a segment contains no visual information that
+warrants EAD treatment (e.g., a talking-head with no slides, text, or visual events,
+where all information is already in the spoken audio). The EAD formatter skips
+these cues and they are excluded from output files.
+"""
+
+
 def sensitivity_to_change_description(sensitivity: float) -> str:
     """
     Map a sensitivity value to a natural-language description of what constitutes
@@ -252,6 +261,66 @@ def sensitivity_to_change_description(sensitivity: float) -> str:
         return (
             "major scene changes only — entirely new locations, significant time jumps, "
             "or chapter-level narrative divisions"
+        )
+
+
+def sensitivity_to_priority_guidance(sensitivity: float) -> str:
+    """
+    Map a sensitivity value (0.0–1.0) to a description of which EAD priority
+    levels to describe in a given segment, aligned with the EAD priority hierarchy:
+
+      1. Actions that change the narrative or outcome
+      2. On-screen text (titles, labels, data, slides — read verbatim)
+      3. Identity of people on screen
+      4. Setting and context establishment
+      5. Supporting visual detail (color, texture, aesthetics — only when meaningful)
+
+    Higher sensitivity → describe more levels.
+    Lower sensitivity → describe only the highest-priority content.
+    """
+    s = max(0.0, min(1.0, float(sensitivity)))
+    if s >= 0.75:
+        return (
+            "Describe content at all five priority levels:\n"
+            "  1. Actions that change the narrative or outcome\n"
+            "  2. On-screen text — read verbatim (titles, slides, labels, lower-thirds,\n"
+            "     subtitles of foreign speech, credits)\n"
+            "  3. Identity: named individuals by name; unnamed by a consistent observable\n"
+            "     attribute (e.g., 'the woman in the blue jacket')\n"
+            "  4. Setting and context — when it establishes essential understanding\n"
+            "  5. Supporting visual detail: color, texture, shape — only when the attribute\n"
+            "     carries meaning (e.g., a color-coded chart). Use basic color terms (red,\n"
+            "     light blue) — not brand names or subjective descriptors."
+        )
+    elif s >= 0.5:
+        return (
+            "Describe content at priority levels 1–4:\n"
+            "  1. Actions that change the narrative or outcome\n"
+            "  2. On-screen text — read verbatim (titles, slides, labels, lower-thirds,\n"
+            "     subtitles of foreign speech, credits)\n"
+            "  3. Identity: named individuals by name; unnamed by a consistent observable\n"
+            "     attribute (e.g., 'the woman in the blue jacket')\n"
+            "  4. Setting and context — when it establishes essential understanding\n"
+            "  Skip level 5 (supporting visual detail) unless the attribute directly changes\n"
+            "  meaning for the viewer."
+        )
+    elif s >= 0.25:
+        return (
+            "Describe content at priority levels 1–3 only:\n"
+            "  1. Actions that change the narrative or outcome\n"
+            "  2. On-screen text — read verbatim (titles, slides, labels, lower-thirds,\n"
+            "     subtitles of foreign speech, credits)\n"
+            "  3. Identity: named individuals by name; unnamed by a consistent observable\n"
+            "     attribute (e.g., 'the woman in the blue jacket')\n"
+            "  Skip levels 4–5 (setting and visual detail) unless essential to meaning."
+        )
+    else:
+        return (
+            "Describe only the two highest-priority content types:\n"
+            "  1. Actions that change the narrative or outcome\n"
+            "  2. On-screen text — read verbatim (titles, slides, labels, lower-thirds,\n"
+            "     subtitles of foreign speech, credits)\n"
+            "  Omit identity, setting, and visual details unless they directly change meaning."
         )
 
 

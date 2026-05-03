@@ -1332,6 +1332,29 @@ function state_up() {
       nvcr.io
   fi
 
+  # For the EAD profile, build the custom vss-agent image before starting the stack.
+  # The image (vss-agent-ead) layers our EAD tools on top of the NVIDIA base image.
+  # Docker Compose cannot do this via include: because it would conflict with the
+  # vss-agent service already defined in vss-agent-docker-compose.yml.
+  if [[ "${profile}" == "ead" ]]; then
+    _ead_version="$(grep "^VSS_AGENT_VERSION=" "${deployment_directory}/developer-workflow/dev-profile-ead/generated.env" | cut -d'=' -f2- | tr -d '"' | head -1)"
+    _ead_version="${_ead_version:-3.1.0}"
+    _ead_image="vss-agent-ead:${_ead_version}"
+    _ead_dockerfile="${deployment_directory}/developer-workflow/dev-profile-ead/Dockerfile.vss-agent"
+    _ead_context="${deployment_directory}/.."
+    if [[ "${dry_run}" == "true" ]]; then
+      echo "[DRY-RUN] docker build -f ${_ead_dockerfile} -t ${_ead_image} --build-arg VSS_AGENT_VERSION=${_ead_version} ${_ead_context}"
+    else
+      echo "[INFO] Building custom EAD agent image: ${_ead_image} ..."
+      docker build \
+        -f "${_ead_dockerfile}" \
+        -t "${_ead_image}" \
+        --build-arg "VSS_AGENT_VERSION=${_ead_version}" \
+        "${_ead_context}"
+      echo "[INFO] EAD agent image build complete: ${_ead_image}"
+    fi
+  fi
+
   # Docker compose up
   echo "[INFO] Starting docker compose..."
   if [[ "${dry_run}" == "true" ]]; then

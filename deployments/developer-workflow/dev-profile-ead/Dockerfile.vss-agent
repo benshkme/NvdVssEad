@@ -30,4 +30,6 @@ COPY agent/src/ ./src/
 # -e        : editable install so Python resolves imports from /vss-agent-ead/src/.
 #             This takes precedence over the original vss_agents installation and
 #             re-registers all NAT component entry points with our additions.
-RUN /vss-agent/.venv/bin/pip install --no-deps --no-build-isolation -e .
+# Exec form (JSON array) is used because the NVIDIA base image does not provide
+# /bin/sh, so the default shell form of RUN would fail.
+RUN ["/vss-agent/.venv/bin/pip", "install", "--no-deps", "--no-build-isolation", "-e", "."]

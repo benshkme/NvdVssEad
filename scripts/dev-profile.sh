@@ -1346,11 +1346,14 @@ function state_up() {
       echo "[DRY-RUN] docker build -f ${_ead_dockerfile} -t ${_ead_image} --build-arg VSS_AGENT_VERSION=${_ead_version} ${_ead_context}"
     else
       echo "[INFO] Building custom EAD agent image: ${_ead_image} ..."
-      docker build \
+      if ! docker build \
         -f "${_ead_dockerfile}" \
         -t "${_ead_image}" \
         --build-arg "VSS_AGENT_VERSION=${_ead_version}" \
-        "${_ead_context}"
+        "${_ead_context}"; then
+        echo "[ERROR] EAD agent image build failed. Aborting."
+        exit 1
+      fi
       echo "[INFO] EAD agent image build complete: ${_ead_image}"
     fi
   fi

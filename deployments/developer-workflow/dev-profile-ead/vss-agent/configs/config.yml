@@ -292,6 +292,9 @@ functions:
     default_vlm_reasoning: false
     # Set to false to skip the HITL confirmation step (e.g. for batch/automated runs)
     hitl_enabled: true
+    # Object store — generated EAD files are saved here and served as download links
+    object_store: ${VSS_AGENT_OBJECT_STORE_TYPE}
+    base_url: ${VSS_AGENT_REPORTS_BASE_URL}
 
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---

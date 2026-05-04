@@ -50,9 +50,11 @@ from nat.builder.framework_enum import LLMFrameworkEnum
 from nat.builder.function_info import FunctionInfo
 from nat.cli.register_workflow import register_function
 from nat.data_models.component_ref import FunctionRef
+from nat.data_models.component_ref import ObjectStoreRef
 from nat.data_models.function import FunctionBaseConfig
 from nat.data_models.interactive import HumanPromptText
 from nat.data_models.interactive import InteractionResponse
+from nat.object_store.models import ObjectStoreItem
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -157,6 +159,16 @@ class EADAgentConfig(FunctionBaseConfig, name="ead_agent"):
         "{output_format}, {vlm_reasoning}, {has_captions}, {title_line}.",
     )
 
+    # File persistence — generated EAD files are saved here and served as downloads
+    object_store: ObjectStoreRef = Field(
+        ...,
+        description="Object store for persisting generated EAD files (same store used by report_gen).",
+    )
+    base_url: str = Field(
+        ...,
+        description="Base URL for accessing saved files (e.g. http://IP:8000/static/).",
+    )
+
     model_config = {"extra": "forbid"}
 
 
@@ -237,7 +249,19 @@ class EADAgentInput(BaseModel):
 async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:
     """EAD Agent — orchestrates the full Extended Audio Description generation pipeline."""
 
-    # Pre-load all tools at startup to fail fast on misconfiguration
+    # Pre-load object store and all tools at startup to fail fast on misconfiguration
+    object_store_client = await builder.get_object_store_client(config.object_store)
+
+    async def _save_ead_file(content: str, filename: str, content_type: str) -> str:
+        """Save a text file to the object store and return its public download URL."""
+        item = ObjectStoreItem(
+            data=content.encode("utf-8"),
+            content_type=content_type,
+            metadata={"generated_by": "ead_agent"},
+        )
+        await object_store_client.upsert_object(filename, item)
+        return f"{config.base_url.rstrip('/')}/{filename}"
+
     caption_parser_tool = await builder.get_tool(config.caption_parser_tool, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
     scene_segmenter_tool = await builder.get_tool(config.scene_segmenter_tool, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
     visual_describer_tool = await builder.get_tool(
@@ -579,11 +603,54 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
             return
 
         # ------------------------------------------------------------------ #
+        # Step 7: Save files to object store and build download links
+        # ------------------------------------------------------------------ #
+        yield AgentMessageChunk(
+            type=AgentMessageChunkType.TOOL_CALL,
+            content="Saving output files to object store…",
+        )
+
+        side_effects: dict = {}
+        files_lines = ["### Download Links\n"]
+
+        try:
+            if fmt_data.get("webvtt_descriptions"):
+                fn = fmt_data["webvtt_descriptions_filename"]
+                url = await _save_ead_file(fmt_data["webvtt_descriptions"], fn, "text/vtt")
+                files_lines.append(f"- [{fn}]({url}) — WebVTT descriptions")
+                side_effects["webvtt_descriptions_url"] = url
+                side_effects["webvtt_descriptions_filename"] = fn
+
+            if fmt_data.get("webvtt_chapters"):
+                fn = fmt_data["webvtt_chapters_filename"]
+                url = await _save_ead_file(fmt_data["webvtt_chapters"], fn, "text/vtt")
+                files_lines.append(f"- [{fn}]({url}) — WebVTT chapters")
+                side_effects["webvtt_chapters_url"] = url
+                side_effects["webvtt_chapters_filename"] = fn
+
+            if fmt_data.get("ttml"):
+                fn = fmt_data["ttml_filename"]
+                url = await _save_ead_file(fmt_data["ttml"], fn, "application/ttml+xml")
+                files_lines.append(f"- [{fn}]({url}) — TTML")
+                side_effects["ttml_url"] = url
+                side_effects["ttml_filename"] = fn
+
+            meta_fn = f"{fmt_data.get('webvtt_descriptions_filename', title).rsplit('.', 1)[0]}.metadata.json"
+            meta_url = await _save_ead_file(metadata_json, meta_fn, "application/ld+json")
+            files_lines.append(f"- [{meta_fn}]({meta_url}) — JSON-LD metadata")
+            side_effects["metadata_url"] = meta_url
+            side_effects["metadata_filename"] = meta_fn
+
+            logger.info(f"EAD files saved: {list(side_effects.keys())}")
+        except Exception as e:
+            logger.warning(f"File save failed — files not downloadable: {e}")
+            files_lines = [f"⚠ File save failed ({e}). Contact admin to check the object store.\n"]
+
+        # ------------------------------------------------------------------ #
         # Final output
         # ------------------------------------------------------------------ #
         elapsed_ms = int((time.time() - start_time) * 1000)
 
-        # Build summary message
         summary_lines = [
             f"## EAD Generation Complete — *{title}*\n",
             f"- **Segments:** {n_cues} EAD cues across {total_duration:.0f}s",
@@ -597,17 +664,6 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
             f"- **Processing time:** {elapsed_ms / 1000:.1f}s\n",
         ]
 
-        # List generated files
-        files_lines = ["### Generated Files\n"]
-        if fmt_data.get("webvtt_descriptions"):
-            files_lines.append(f"- `{fmt_data['webvtt_descriptions_filename']}` — WebVTT descriptions (EAD cues)")
-        if fmt_data.get("webvtt_chapters"):
-            files_lines.append(f"- `{fmt_data['webvtt_chapters_filename']}` — WebVTT chapters (navigation)")
-        if fmt_data.get("ttml"):
-            files_lines.append(f"- `{fmt_data['ttml_filename']}` — TTML (broadcast/streaming)")
-        files_lines.append("- JSON-LD VideoObject metadata document\n")
-
-        # First few EAD cues as preview
         preview_lines = ["### EAD Preview (first 3 cues)\n"]
         for cue in cues_list[:3]:
             start = cue["start_seconds"]
@@ -618,20 +674,7 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
                 f"**[{m_s:02d}:{s_s:02d} → {m_e:02d}:{s_e:02d}]** {cue['description']}\n"
             )
 
-        full_summary = "\n".join(summary_lines + files_lines + preview_lines)
-
-        # Side effects — embed file content for download / display
-        side_effects: dict = {}
-        if fmt_data.get("webvtt_descriptions"):
-            side_effects["webvtt_descriptions"] = fmt_data["webvtt_descriptions"]
-            side_effects["webvtt_descriptions_filename"] = fmt_data["webvtt_descriptions_filename"]
-        if fmt_data.get("webvtt_chapters"):
-            side_effects["webvtt_chapters"] = fmt_data["webvtt_chapters"]
-            side_effects["webvtt_chapters_filename"] = fmt_data["webvtt_chapters_filename"]
-        if fmt_data.get("ttml"):
-            side_effects["ttml"] = fmt_data["ttml"]
-            side_effects["ttml_filename"] = fmt_data["ttml_filename"]
-        side_effects["metadata_json_ld"] = metadata_json
+        full_summary = "\n".join(summary_lines + files_lines + [""] + preview_lines)
 
         agent_output = AgentOutput(
             messages=[full_summary],

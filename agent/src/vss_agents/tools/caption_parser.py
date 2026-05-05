@@ -135,7 +135,7 @@ def _parse_srt(content: str) -> list[CaptionCue]:
     blocks = re.split(r"\n\s*\n", content.replace("\r\n", "\n").replace("\r", "\n").strip())
 
     for block in blocks:
-        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+        lines = [ln.strip() for ln in block.strip().splitlines() if ln.strip()]
         if len(lines) < 2:
             continue
 
@@ -160,7 +160,7 @@ def _parse_srt(content: str) -> list[CaptionCue]:
         start_s = _ts_to_seconds(m.group(1), m.group(2), m.group(3), m.group(4))
         end_s = _ts_to_seconds(m.group(5), m.group(6), m.group(7), m.group(8))
         text_lines = lines[ts_line_idx + 1 :]
-        text = " ".join(_strip_formatting(l) for l in text_lines if l)
+        text = " ".join(_strip_formatting(ln) for ln in text_lines if ln)
 
         if text and end_s > start_s:
             index = cue_num if cue_num is not None else len(cues) + 1

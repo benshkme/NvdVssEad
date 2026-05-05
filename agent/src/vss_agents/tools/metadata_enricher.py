@@ -197,14 +197,14 @@ async def metadata_enricher(config: MetadataEnricherConfig, builder: Builder) ->
         segment_clips = _build_segment_clips(cues)
         duration_iso = seconds_to_iso_duration(total_duration)
 
-        doc = VideoMetadataDocument(
-            name=title,
-            description=overall_desc,
-            duration_iso=duration_iso,
-            transcript=transcript,
-            chapter_list=chapter_clips,
-            has_part=segment_clips,
-        )
+        doc = VideoMetadataDocument.model_validate({
+            "name": title,
+            "description": overall_desc,
+            "duration": duration_iso,
+            "transcript": transcript,
+            "chapter_list": chapter_clips,
+            "hasPart": segment_clips,
+        })
 
         return doc.model_dump_json(by_alias=True, indent=2)
 

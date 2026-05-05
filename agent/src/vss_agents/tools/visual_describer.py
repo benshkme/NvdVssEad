@@ -54,6 +54,26 @@ logger = logging.getLogger(__name__)
 
 _SENSITIVITY_DEFAULT = 0.5
 _MAX_CONCURRENT_DEFAULT = 4
+_MAX_WORDS_DEFAULT = 50
+
+
+def _truncate_words(text: str, max_words: int) -> str:
+    """Hard-truncate text to at most max_words words.
+
+    VLMs reliably ignore word-count instructions in prompts.
+    This post-processing step is the only reliable enforcement.
+    Tries to end on a sentence boundary; falls back to a word boundary.
+    """
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    truncated = " ".join(words[:max_words])
+    # Prefer ending at a sentence boundary within the allowed words
+    for end in (".", "!", "?"):
+        last = truncated.rfind(end)
+        if last > len(truncated) // 2:  # only if the sentence isn't too short
+            return truncated[: last + 1]
+    return truncated
 
 
 def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
@@ -193,6 +213,16 @@ class VisualDescriberConfig(FunctionBaseConfig, name="visual_describer"):
         default=False,
         description="Enable VLM reasoning mode (cosmos-reason models) for richer descriptions.",
     )
+    max_words: int = Field(
+        default=_MAX_WORDS_DEFAULT,
+        ge=10,
+        le=200,
+        description=(
+            "Hard word limit applied to every description after the VLM responds. "
+            "VLMs ignore prompt-level word count instructions, so this post-processing "
+            "truncation is the only reliable enforcement. Default: 50."
+        ),
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -301,8 +331,13 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
                         description = ""
                         logger.warning(f"Segment {segment.index}: VLM returned empty response")
                     else:
-                        description = raw
-                        logger.debug(f"Segment {segment.index}: described ({len(description)} chars)")
+                        # Hard-enforce the word limit regardless of what the VLM returned.
+                        description = _truncate_words(raw, config.max_words)
+                        original_words = len(raw.split())
+                        if original_words > config.max_words:
+                            logger.debug(f"Segment {segment.index}: truncated {original_words}→{config.max_words} words")
+                        else:
+                            logger.debug(f"Segment {segment.index}: {original_words} words")
 
                 except Exception as e:
                     logger.error(f"VLM call failed for segment {segment.index}: {e}")

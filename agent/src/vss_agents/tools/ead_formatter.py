@@ -212,13 +212,9 @@ class EADFormatterInput(BaseModel):
         default=None,
         description="Video title used in file headers and filename stems. Defaults to 'video'.",
     )
-    output_format: Literal["webvtt", "ttml", "all"] = Field(
-        default="all",
-        description=(
-            "'webvtt' — WebVTT descriptions + chapters files only. "
-            "'ttml'  — TTML file only. "
-            "'all'   — all three formats (default)."
-        ),
+    output_format: Literal["webvtt"] = Field(
+        default="webvtt",
+        description="Output format. Only WebVTT is supported.",
     )
 
     model_config = {"extra": "forbid"}
@@ -230,19 +226,17 @@ async def ead_formatter(config: EADFormatterConfig, builder: Builder) -> AsyncGe
 
     async def _ead_formatter(input: EADFormatterInput) -> str:
         """
-        Render Extended Audio Description cues and chapters into standard caption files.
+        Render Extended Audio Description cues and chapters into WebVTT caption files.
 
-        Produces up to three file formats depending on output_format:
-
-        • WebVTT descriptions (.ead.vtt)  — use with <track kind="descriptions">
-        • WebVTT chapters (.chapters.vtt) — use with <track kind="chapters">
-        • TTML (.ead.ttml)                — broadcast / streaming pipeline format
+        Produces two files:
+        • WebVTT descriptions (.ead.vtt)    — use with <track kind="descriptions">
+        • WebVTT chapters (.chapters.vtt)   — use with <track kind="chapters">
 
         Returns:
             JSON object containing file contents and suggested filenames:
-              webvtt_descriptions, webvtt_chapters, ttml  (content strings)
-              webvtt_descriptions_filename, webvtt_chapters_filename, ttml_filename
-              cue_count, chapter_count
+              webvtt_descriptions, webvtt_chapters  (content strings)
+              webvtt_descriptions_filename, webvtt_chapters_filename
+              cue_count, skipped_cue_count, chapter_count
         """
         # Parse cues
         try:
@@ -273,21 +267,11 @@ async def ead_formatter(config: EADFormatterConfig, builder: Builder) -> AsyncGe
             "cue_count": len(described_cues),
             "skipped_cue_count": len(cues) - len(described_cues),
             "chapter_count": len(chapters),
-            "webvtt_descriptions": None,
+            "webvtt_descriptions": _build_webvtt_descriptions(cues, title),
             "webvtt_descriptions_filename": f"{stem}.ead.vtt",
-            "webvtt_chapters": None,
+            "webvtt_chapters": _build_webvtt_chapters(chapters) if chapters else None,
             "webvtt_chapters_filename": f"{stem}.chapters.vtt",
-            "ttml": None,
-            "ttml_filename": f"{stem}.ead.ttml",
         }
-
-        if fmt in ("webvtt", "all"):
-            result["webvtt_descriptions"] = _build_webvtt_descriptions(cues, title)
-            if chapters:
-                result["webvtt_chapters"] = _build_webvtt_chapters(chapters)
-
-        if fmt in ("ttml", "all"):
-            result["ttml"] = _build_ttml(cues, title)
 
         return json.dumps(result, indent=2, ensure_ascii=False)
 

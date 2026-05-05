@@ -26,7 +26,7 @@ pre-defined and executed in order:
   4. Describe — generate a VLM-based EAD cue per segment via visual_describer
   5. Chapter — group cues into titled, summarised chapters via chapter_generator
   6. Enrich  — assemble a JSON-LD VideoObject metadata document via metadata_enricher
-  7. Format  — render WebVTT descriptions, WebVTT chapters, and/or TTML via ead_formatter
+  7. Format  — render WebVTT descriptions and WebVTT chapters via ead_formatter
 
 Progress is streamed to the UI via AgentMessageChunk after each step so the
 user sees live status rather than a silent wait.
@@ -128,7 +128,7 @@ class EADAgentConfig(FunctionBaseConfig, name="ead_agent"):
     )
     ead_formatter_tool: FunctionRef = Field(
         default="ead_formatter",
-        description="Tool to render WebVTT and TTML output files.",
+        description="Tool to render WebVTT output files (descriptions + chapters).",
     )
 
     # Defaults
@@ -138,9 +138,9 @@ class EADAgentConfig(FunctionBaseConfig, name="ead_agent"):
         le=1.0,
         description="Default segmentation sensitivity (0.0–1.0).",
     )
-    default_output_format: Literal["webvtt", "ttml", "all"] = Field(
-        default="all",
-        description="Default output format for ead_formatter.",
+    default_output_format: Literal["webvtt"] = Field(
+        default="webvtt",
+        description="Output format for ead_formatter (WebVTT only).",
     )
     default_vlm_reasoning: bool = Field(
         default=False,
@@ -211,15 +211,9 @@ class EADAgentInput(BaseModel):
         default="auto",
         description="Caption file format. Use 'auto' to detect automatically.",
     )
-    output_format: Literal["webvtt", "ttml", "all"] | None = Field(
+    output_format: Literal["webvtt"] | None = Field(
         default=None,
-        description=(
-            "Output file format(s) to generate:\n"
-            "  'webvtt' — WebVTT descriptions + chapters files\n"
-            "  'ttml'   — TTML file only\n"
-            "  'all'    — all formats (default)\n"
-            "Defaults to the profile config value when omitted."
-        ),
+        description="Output format. Only 'webvtt' is supported. Defaults to the profile config value when omitted.",
     )
     video_title: str | None = Field(
         default=None,
@@ -287,7 +281,7 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
           3. Generate a VLM-based visual description per segment
           4. Group segments into titled chapters
           5. Assemble a JSON-LD VideoObject metadata document
-          6. Render WebVTT and/or TTML output files
+          6. Render WebVTT output files (descriptions + chapters)
 
         Returns streamed progress updates and a final AgentOutput containing
         all generated file contents and the metadata document.
@@ -356,11 +350,11 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
 
                 # Collect output format override
                 fmt_input = await _prompt_user(
-                    "Enter output format (webvtt / ttml / all) or press Submit to keep current value:",
+                    "Enter output format (webvtt) or press Submit to keep current value:",
                     required=False,
                     placeholder=output_format,
                 )
-                if fmt_input and fmt_input in ("webvtt", "ttml", "all"):
+                if fmt_input and fmt_input == "webvtt":
                     output_format = fmt_input  # type: ignore[assignment]
 
                 # Collect title override
@@ -628,13 +622,6 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
                 side_effects["webvtt_chapters_url"] = url
                 side_effects["webvtt_chapters_filename"] = fn
 
-            if fmt_data.get("ttml"):
-                fn = fmt_data["ttml_filename"]
-                url = await _save_ead_file(fmt_data["ttml"], fn, "application/ttml+xml")
-                files_lines.append(f"- [{fn}]({url}) — TTML")
-                side_effects["ttml_url"] = url
-                side_effects["ttml_filename"] = fn
-
             meta_fn = f"{fmt_data.get('webvtt_descriptions_filename', title).rsplit('.', 1)[0]}.metadata.json"
             meta_url = await _save_ead_file(metadata_json, meta_fn, "application/ld+json")
             files_lines.append(f"- [{meta_fn}]({meta_url}) — JSON-LD metadata")
@@ -703,7 +690,7 @@ async def ead_agent(config: EADAgentConfig, builder: Builder) -> AsyncGenerator[
         description=(
             "Generate Extended Audio Description (EAD) files for an uploaded video. "
             "Runs the full EAD pipeline: scene segmentation → VLM visual description per segment → "
-            "chapter generation → JSON-LD metadata enrichment → WebVTT/TTML file rendering. "
+            "chapter generation → JSON-LD metadata enrichment → WebVTT file rendering. "
             "Call this agent when the user asks to generate audio descriptions, EAD files, "
             "accessibility descriptions, or a chapter manifest for a video. "
             "Optionally accepts a VTT/SRT caption file for improved description context. "

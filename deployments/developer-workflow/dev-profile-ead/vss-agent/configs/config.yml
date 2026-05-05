@@ -288,7 +288,7 @@ functions:
     ead_formatter_tool: ead_formatter
     # Defaults (all overridable per-request via input fields)
     default_sensitivity: 0.5
-    default_output_format: all
+    default_output_format: webvtt
     default_vlm_reasoning: false
     # Set to false to skip the HITL confirmation step (e.g. for batch/automated runs)
     hitl_enabled: true

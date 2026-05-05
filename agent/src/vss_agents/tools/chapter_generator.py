@@ -55,17 +55,30 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = """\
 You are an accessibility specialist creating chapter structure for a video audio description.
 You will receive a list of Extended Audio Description (EAD) cues with timestamps.
-Your task is to group consecutive cues into meaningful chapters that help blind and
-visually impaired viewers navigate the video content.
+Your task is to group consecutive cues into meaningful chapters based on genuine content
+transitions — NOT by equal time splits.
 
-Rules for chapters:
+CHAPTER BOUNDARIES should reflect real transitions such as:
+- Change in physical environment or setting (e.g., indoor to outdoor, new room)
+- Change in main subject, speaker, or presenter
+- Transition between content types (e.g., live speech → slide presentation → live demo → Q&A)
+- Switch in shared/displayed content (e.g., new slide deck, screen share, video playback)
+- Significant change in topic or narrative arc
+- Transition between activities (e.g., introduction → workshop → discussion)
+
+Do NOT create chapter breaks for:
+- Arbitrary time intervals
+- Minor camera movements or cuts within the same scene
+- Brief pauses or natural breaks within the same activity
+
+Rules:
 - Each chapter must be a contiguous range of cues (no gaps, no overlaps).
-- Chapter titles should be 5–10 words, descriptive, and accessible (no jargon).
-- Chapter summaries should be 2–3 sentences describing the primary visual content.
-- Chapters should reflect genuine narrative or visual transitions — not just equal time splits.
+- Chapter titles should be 5–10 words, descriptive and specific to the content.
+- Chapter summaries should be 1–2 sentences describing the visual content of the chapter.
 - Every cue must belong to exactly one chapter.
 - The first chapter must start with cue index 0.
 - The last chapter must end with the last cue index.
+- If no meaningful content transitions exist, return a single chapter covering the whole video.
 
 Return ONLY a valid JSON array — no markdown, no explanation, no wrapping object.
 Each element must have exactly these fields:

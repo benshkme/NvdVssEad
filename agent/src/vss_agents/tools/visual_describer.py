@@ -150,13 +150,23 @@ and nothing else:
 
 {priority_guidance}
 
+━━━ NO REPETITION ━━━
+
+Do NOT re-describe stable background elements that have been continuously present throughout
+the video and have NOT changed — e.g., the same conference room, the same presenter at the
+same desk, the same screen layout. The viewer already knows what was established earlier.
+Describe ONLY what is NEW, DIFFERENT, or ACTIVELY HAPPENING in this specific segment.
+
+If nothing has visually changed from the established scene, output {NO_DESCRIPTION_NEEDED}.
+
 ━━━ LANGUAGE RULES ━━━
 
 • Present tense, active voice: "A man walks towards the camera" — not "A man is seen walking."
 • Objective and factual — no interpretation, opinion, or emotional commentary.
-• Be proportional: the description length should match the segment duration and information density.
+• STRICT WORD LIMIT: Maximum 50 words. Count carefully. Cut ruthlessly — every word must earn
+  its place. If you reach 50 words, stop.
 
-OUTPUT: One concise paragraph of EAD description for this segment, or {NO_DESCRIPTION_NEEDED}.\
+OUTPUT: One concise description (max 50 words) for this segment, or {NO_DESCRIPTION_NEEDED}.\
 """
 
 

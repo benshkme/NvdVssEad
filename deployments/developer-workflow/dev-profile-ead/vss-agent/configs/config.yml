@@ -255,8 +255,6 @@ functions:
     default_sensitivity: 0.5
     # Max segments described concurrently. Increase on multi-GPU setups.
     max_concurrent: 4
-    # Hard word cap enforced in post-processing — VLMs ignore prompt-level limits.
-    max_words: 50
     # Set to true for richer descriptions with cosmos-reason models (slower).
     vlm_reasoning: false
 

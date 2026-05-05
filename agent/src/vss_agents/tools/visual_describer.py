@@ -54,26 +54,22 @@ logger = logging.getLogger(__name__)
 
 _SENSITIVITY_DEFAULT = 0.5
 _MAX_CONCURRENT_DEFAULT = 4
-_MAX_WORDS_DEFAULT = 50
 
 
-def _truncate_words(text: str, max_words: int) -> str:
-    """Hard-truncate text to at most max_words words.
+def _sensitivity_to_sentence_limit(sensitivity: float) -> str:
+    """Map sensitivity to a natural-language sentence count instruction.
 
-    VLMs reliably ignore word-count instructions in prompts.
-    This post-processing step is the only reliable enforcement.
-    Tries to end on a sentence boundary; falls back to a word boundary.
+    VLMs follow sentence-count constraints more reliably than word counts.
+    Higher sensitivity = more detail = slightly more sentences allowed,
+    but still tightly bounded to keep descriptions concise.
     """
-    words = text.split()
-    if len(words) <= max_words:
-        return text
-    truncated = " ".join(words[:max_words])
-    # Prefer ending at a sentence boundary within the allowed words
-    for end in (".", "!", "?"):
-        last = truncated.rfind(end)
-        if last > len(truncated) // 2:  # only if the sentence isn't too short
-            return truncated[: last + 1]
-    return truncated
+    s = max(0.0, min(1.0, sensitivity))
+    if s >= 0.75:
+        return "write exactly 2 short sentences"
+    elif s >= 0.5:
+        return "write exactly 1-2 short sentences"
+    else:
+        return "write exactly 1 short sentence"
 
 
 def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
@@ -84,6 +80,7 @@ def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
     sensitivity parameter to the EAD priority hierarchy levels.
     """
     priority_guidance = sensitivity_to_priority_guidance(sensitivity)
+    sentence_limit = _sensitivity_to_sentence_limit(sensitivity)
 
     # Audio context block — present only when captions overlap this segment.
     # Used to prevent re-describing audio content and to avoid verbatim repetition.
@@ -179,14 +176,20 @@ Describe ONLY what is NEW, DIFFERENT, or ACTIVELY HAPPENING in this specific seg
 
 If nothing has visually changed from the established scene, output {NO_DESCRIPTION_NEEDED}.
 
-━━━ LANGUAGE RULES ━━━
+━━━ LANGUAGE AND LENGTH RULES ━━━
 
 • Present tense, active voice: "A man walks towards the camera" — not "A man is seen walking."
 • Objective and factual — no interpretation, opinion, or emotional commentary.
-• STRICT WORD LIMIT: Maximum 50 words. Count carefully. Cut ruthlessly — every word must earn
-  its place. If you reach 50 words, stop.
+• LENGTH: {sentence_limit}. This is a strict limit. Choose only the most essential
+  visual detail for each sentence. Do not pad or elaborate.
 
-OUTPUT: One concise description (max 50 words) for this segment, or {NO_DESCRIPTION_NEEDED}.\
+GOOD EXAMPLE (1 sentence): "Slide reads: 'Q3 Revenue +18%'; presenter points to a bar chart."
+GOOD EXAMPLE (2 sentences): "Three panellists face the camera at a conference table. The leftmost
+  speaker gestures towards a whiteboard showing a network diagram."
+BAD EXAMPLE (too long): "In this segment we can see a conference room where three people are
+  sitting around a table and one of them is speaking while pointing at a screen that shows..."
+
+OUTPUT: Your description ({sentence_limit}), or {NO_DESCRIPTION_NEEDED}.\
 """
 
 
@@ -212,16 +215,6 @@ class VisualDescriberConfig(FunctionBaseConfig, name="visual_describer"):
     vlm_reasoning: bool = Field(
         default=False,
         description="Enable VLM reasoning mode (cosmos-reason models) for richer descriptions.",
-    )
-    max_words: int = Field(
-        default=_MAX_WORDS_DEFAULT,
-        ge=10,
-        le=200,
-        description=(
-            "Hard word limit applied to every description after the VLM responds. "
-            "VLMs ignore prompt-level word count instructions, so this post-processing "
-            "truncation is the only reliable enforcement. Default: 50."
-        ),
     )
 
     model_config = {"extra": "forbid"}
@@ -331,13 +324,8 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
                         description = ""
                         logger.warning(f"Segment {segment.index}: VLM returned empty response")
                     else:
-                        # Hard-enforce the word limit regardless of what the VLM returned.
-                        description = _truncate_words(raw, config.max_words)
-                        original_words = len(raw.split())
-                        if original_words > config.max_words:
-                            logger.debug(f"Segment {segment.index}: truncated {original_words}→{config.max_words} words")
-                        else:
-                            logger.debug(f"Segment {segment.index}: {original_words} words")
+                        description = raw
+                        logger.debug(f"Segment {segment.index}: {len(raw.split())} words")
 
                 except Exception as e:
                     logger.error(f"VLM call failed for segment {segment.index}: {e}")

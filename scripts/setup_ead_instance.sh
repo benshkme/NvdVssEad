@@ -85,38 +85,18 @@ _patch_env "EXTERNAL_IP" "${PUBLIC_IP}"
 # =============================================================================
 _section "NGC API key"
 
-_prompt_for_key=true
+# Read the key directly from the .env file (NGC_CLI_API_KEY is set inline there).
+# The setup script no longer manages a separate ~/.ngc_api_key file.
+ENV_KEY=$(grep "^NGC_CLI_API_KEY=" "$ENV_FILE" | cut -d"'" -f2 | tr -d '[:space:]')
 
-if [[ -f "$NGC_KEY_FILE" && -s "$NGC_KEY_FILE" ]]; then
-  EXISTING_KEY=$(tr -d '[:space:]' < "$NGC_KEY_FILE")
-  # Validate: a clean NGC key starts with "nvapi-" and is ~80 chars, no whitespace
-  if [[ "$EXISTING_KEY" =~ ^nvapi-[A-Za-z0-9_-]{40,}$ ]]; then
-    _info "Found valid existing key in $NGC_KEY_FILE — skipping prompt."
-    _info "(Delete the file and re-run this script to update the key.)"
-    _prompt_for_key=false
-  else
-    _warn "Key file $NGC_KEY_FILE looks corrupted (invalid format) — prompting for a new key."
-    rm -f "$NGC_KEY_FILE"
-  fi
-fi
-
-if [[ "$_prompt_for_key" == "true" ]]; then
-  echo "Enter your NGC API key (from https://org.ngc.nvidia.com/setup/api-keys):"
-  read -r -s -p "  NGC_CLI_API_KEY: " NGC_KEY_INPUT
-  echo
-  # Strip any accidental whitespace/newlines from pasted input
-  NGC_KEY_INPUT=$(echo "$NGC_KEY_INPUT" | tr -d '[:space:]')
-  if [[ -z "$NGC_KEY_INPUT" ]]; then
-    _warn "No key entered — skipping. You must export NGC_CLI_API_KEY manually before deploying."
-  elif [[ ! "$NGC_KEY_INPUT" =~ ^nvapi- ]]; then
-    _warn "Key does not start with 'nvapi-' — it may be invalid. Saving anyway."
-    printf '%s' "$NGC_KEY_INPUT" > "$NGC_KEY_FILE"
-    chmod 600 "$NGC_KEY_FILE"
-  else
-    printf '%s' "$NGC_KEY_INPUT" > "$NGC_KEY_FILE"
-    chmod 600 "$NGC_KEY_FILE"
-    _info "Key saved to $NGC_KEY_FILE (chmod 600)"
-  fi
+if [[ "$ENV_KEY" =~ ^nvapi-[A-Za-z0-9_-]{40,}$ ]]; then
+  _info "NGC_CLI_API_KEY found in .env — no prompt needed."
+  # Keep ~/.ngc_api_key in sync for run_vss_ead compatibility
+  printf '%s' "$ENV_KEY" > "$NGC_KEY_FILE"
+  chmod 600 "$NGC_KEY_FILE"
+else
+  _warn "NGC_CLI_API_KEY in .env is missing or invalid (value: '${ENV_KEY:0:12}...')."
+  _warn "Edit $ENV_FILE and set NGC_CLI_API_KEY='nvapi-...' then re-run this script."
 fi
 
 # =============================================================================

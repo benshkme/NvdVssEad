@@ -32,7 +32,6 @@ processing time proportional to video length rather than segment count.
 """
 
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -56,6 +55,14 @@ _SENSITIVITY_DEFAULT = 0.5
 _MAX_CONCURRENT_DEFAULT = 4
 
 
+def _format_scene_context(prev_descriptions: list[str]) -> str:
+    """Format previous scene descriptions for injection into the prompt."""
+    if not prev_descriptions:
+        return ""
+    lines = "\n".join(f"  • {d}" for d in prev_descriptions)
+    return f"\n── PREVIOUSLY ESTABLISHED SCENES ──\n{lines}\n"
+
+
 def _sensitivity_to_sentence_limit(sensitivity: float) -> str:
     """Map sensitivity to a natural-language sentence count instruction.
 
@@ -72,18 +79,41 @@ def _sensitivity_to_sentence_limit(sensitivity: float) -> str:
         return "write exactly 1 short sentence"
 
 
-def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
+def _build_ead_prompt(
+    segment: SceneSegment,
+    sensitivity: float,
+    prev_descriptions: list[str] | None = None,
+    is_opening: bool = False,
+) -> str:
     """
     Construct a guidelines-aligned VLM prompt for a single EAD segment.
 
     Implements the full EAD describe/do-not-describe ruleset and maps the
     sensitivity parameter to the EAD priority hierarchy levels.
+
+    Args:
+        segment: The video segment to describe.
+        sensitivity: 0.0–1.0 detail level.
+        prev_descriptions: List of distinct scene descriptions seen so far.
+            Used to enable "Back to [scene]" language for recurring scenes.
+        is_opening: If True, suppress [NO_DESCRIPTION_NEEDED] and require
+            a full description of the opening scene.
     """
     priority_guidance = sensitivity_to_priority_guidance(sensitivity)
     sentence_limit = _sensitivity_to_sentence_limit(sensitivity)
+    scene_ctx = _format_scene_context(prev_descriptions or [])
+
+    # Instruction override for the opening segment
+    opening_instruction = ""
+    if is_opening:
+        opening_instruction = (
+            "\n⚡ OPENING SEGMENT: This is the very first segment of the video. "
+            "A full scene description is MANDATORY — do NOT output "
+            f"{NO_DESCRIPTION_NEEDED}. Establish the setting, who is visible, "
+            "and what is happening.\n"
+        )
 
     # Audio context block — present only when captions overlap this segment.
-    # Used to prevent re-describing audio content and to avoid verbatim repetition.
     audio_block = ""
     if segment.caption_context.strip():
         audio_block = (
@@ -96,7 +126,7 @@ def _build_ead_prompt(segment: SceneSegment, sensitivity: float) -> str:
     return f"""\
 You are generating an Extended Audio Description (EAD) cue for blind and visually impaired viewers.
 Segment {segment.index + 1} of the video — {segment.start_seconds:.1f}s to {segment.end_seconds:.1f}s.
-{audio_block}
+{opening_instruction}{audio_block}{scene_ctx}
 ━━━ WHAT TO DESCRIBE ━━━
 
 Describe only visual content that meets one or more of these criteria:
@@ -154,6 +184,18 @@ Describe only visual content that meets one or more of these criteria:
 • Purely decorative background elements, stylistic choices, or aesthetic details that do not
   affect understanding.
 
+━━━ SCENE CONTINUITY AND MEMORY ━━━
+
+If this segment shows a scene that matches one already listed in PREVIOUSLY ESTABLISHED SCENES
+above — same location, same layout, same people — do NOT re-describe the whole scene.
+Instead write: "Back to [brief scene identifier] — [what's actively happening now]."
+Example: "Back to conference room — presenter advances to the next slide."
+
+If this segment starts with a HARD CUT to a COMPLETELY different scene (new location, new
+setting, or clearly new sequence), begin your description with:
+"Scene change: [description of the new scene]."
+Example: "Scene change: close-up of a whiteboard showing a flowchart diagram."
+
 ━━━ SPECIAL CASE — NO DESCRIPTION NEEDED ━━━
 
 If this segment contains NO visual information essential for understanding — for example, a
@@ -205,12 +247,6 @@ class VisualDescriberConfig(FunctionBaseConfig, name="visual_describer"):
         ge=0.0,
         le=1.0,
         description="Default sensitivity when no override is provided in the input.",
-    )
-    max_concurrent: int = Field(
-        default=_MAX_CONCURRENT_DEFAULT,
-        ge=1,
-        le=16,
-        description="Maximum number of segments to describe concurrently.",
     )
     vlm_reasoning: bool = Field(
         default=False,
@@ -292,62 +328,84 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
 
         logger.info(
             f"Describing {len(segments)} segments for '{input.sensor_id}', "
-            f"sensitivity={sensitivity:.2f}, reasoning={use_reasoning}, "
-            f"max_concurrent={config.max_concurrent}"
+            f"sensitivity={sensitivity:.2f}, reasoning={use_reasoning} (sequential + scene memory)"
         )
 
         vu_tool = await builder.get_tool(config.video_understanding_tool, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
-        semaphore = asyncio.Semaphore(config.max_concurrent)
 
-        async def _describe_segment(segment: SceneSegment) -> EADCue:
-            user_prompt = _build_ead_prompt(segment, sensitivity)
-            async with semaphore:
-                try:
-                    result = await vu_tool.ainvoke(
-                        input={
-                            "sensor_id": input.sensor_id,
-                            "start_timestamp": segment.start_seconds,
-                            "end_timestamp": segment.end_seconds,
-                            "user_prompt": user_prompt,
-                            "vlm_reasoning": use_reasoning,
-                        }
-                    )
-                    raw = str(result).strip() if result else ""
+        async def _call_vlm(segment: SceneSegment, user_prompt: str) -> str:
+            try:
+                result = await vu_tool.ainvoke(
+                    input={
+                        "sensor_id": input.sensor_id,
+                        "start_timestamp": segment.start_seconds,
+                        "end_timestamp": segment.end_seconds,
+                        "user_prompt": user_prompt,
+                        "vlm_reasoning": use_reasoning,
+                    }
+                )
+                return str(result).strip() if result else ""
+            except Exception as e:
+                logger.error(f"VLM call failed for segment {segment.index}: {e}")
+                return ""
 
-                    # VLM signalled that this segment needs no description
-                    # (talking-head with no slides/text/visual events, all info in audio).
-                    # Store as empty string so the formatter silently skips it.
-                    if NO_DESCRIPTION_NEEDED in raw:
-                        description = ""
-                        logger.info(f"Segment {segment.index}: no description needed (VLM signal)")
-                    elif not raw:
-                        description = ""
-                        logger.warning(f"Segment {segment.index}: VLM returned empty response")
-                    else:
-                        description = raw
-                        logger.debug(f"Segment {segment.index}: {len(raw.split())} words")
+        # Process segments SEQUENTIALLY so each segment can see the established
+        # scene context from all previous descriptions. This enables "Back to [scene]"
+        # language and prevents redundant re-descriptions of unchanged scenes.
+        #
+        # prev_scenes: last N distinct scene descriptions (excludes "Back to..." entries
+        # and empty descriptions) used as context for each subsequent segment.
+        prev_scenes: list[str] = []
+        cues: list[EADCue] = []
+        _MAX_SCENE_CONTEXT = 5  # how many prior scene anchors to pass as context
 
-                except Exception as e:
-                    logger.error(f"VLM call failed for segment {segment.index}: {e}")
-                    description = ""
-
-            return EADCue(
-                index=segment.index,
-                start_seconds=segment.start_seconds,
-                end_seconds=segment.end_seconds,
-                description=description,
+        for seg in segments:
+            is_opening = (seg.index == 0)
+            user_prompt = _build_ead_prompt(
+                seg,
+                sensitivity,
+                prev_descriptions=prev_scenes,
+                is_opening=is_opening,
             )
+            raw = await _call_vlm(seg, user_prompt)
 
-        cues = await asyncio.gather(*[_describe_segment(seg) for seg in segments])
-        cues_sorted = sorted(cues, key=lambda c: c.index)
+            if is_opening and (not raw or NO_DESCRIPTION_NEEDED in raw):
+                # Opening segment must always have a description — retry without
+                # the NO_DESCRIPTION_NEEDED escape hatch.
+                logger.info("Segment 0: VLM tried to skip opening — retrying with forced description")
+                retry_prompt = _build_ead_prompt(seg, sensitivity, prev_descriptions=[], is_opening=True)
+                raw = await _call_vlm(seg, retry_prompt)
 
-        described = sum(1 for c in cues_sorted if c.description)
-        skipped = len(cues_sorted) - described
+            if NO_DESCRIPTION_NEEDED in raw:
+                description = ""
+                logger.info(f"Segment {seg.index}: no description needed")
+            elif not raw:
+                description = ""
+                logger.warning(f"Segment {seg.index}: VLM returned empty response")
+            else:
+                description = raw
+                logger.debug(f"Segment {seg.index}: {len(raw.split())} words")
+
+            cues.append(EADCue(
+                index=seg.index,
+                start_seconds=seg.start_seconds,
+                end_seconds=seg.end_seconds,
+                description=description,
+            ))
+
+            # Update scene context: only add full new-scene descriptions (not "Back to..."
+            # entries) to the context passed to future segments.
+            if description and not description.lower().startswith("back to"):
+                entry = f"[{seg.start_seconds:.0f}s] {description}"
+                prev_scenes = (prev_scenes + [entry])[-_MAX_SCENE_CONTEXT:]
+
+        described = sum(1 for c in cues if c.description)
+        skipped = len(cues) - described
         logger.info(
             f"Visual description complete for '{input.sensor_id}': "
-            f"{described} cues with descriptions, {skipped} skipped (no visual info needed)"
+            f"{described} cues with descriptions, {skipped} skipped"
         )
-        return json.dumps([c.model_dump() for c in cues_sorted], indent=2)
+        return json.dumps([c.model_dump() for c in cues], indent=2)
 
     yield FunctionInfo.create(
         single_fn=_visual_describer,

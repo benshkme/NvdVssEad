@@ -59,6 +59,14 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
 
         logger.info("Registered custom /health endpoint (replaced NAT default)")
 
+        # Add caption file upload routes (bypass VST for .srt / .vtt files)
+        try:
+            from vss_agents.api.caption_upload import register_caption_routes
+
+            register_caption_routes(app)
+        except Exception as exc:
+            logger.warning("Failed to register caption upload routes: %s", exc)
+
         # Add custom streaming routes if configured
         self._maybe_register_streaming_routes(app)
 

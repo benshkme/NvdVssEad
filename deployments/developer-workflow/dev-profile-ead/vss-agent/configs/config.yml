@@ -253,8 +253,6 @@ functions:
     _type: visual_describer
     video_understanding_tool: video_understanding
     default_sensitivity: 0.5
-    # Max segments described concurrently. Increase on multi-GPU setups.
-    max_concurrent: 4
     # Set to true for richer descriptions with cosmos-reason models (slower).
     vlm_reasoning: false
 
@@ -409,6 +407,15 @@ workflow:
 
       **vst_snapshot** - For retrieving a still frame at a specific timestamp.
       - CRITICAL: Always call vst_snapshot to get the URL. Never generate URLs yourself.
+
+      **Caption file uploads (.srt / .vtt)**
+      - When the user uploads a file ending in .srt or .vtt, it is a subtitle/caption file,
+        NOT a video. Acknowledge it and remember the filename.
+      - When the user subsequently asks for EAD, extract the caption key from the filename
+        (first 12 chars of MD5 of the filename without extension) and fetch the content
+        from http://${HOST_IP}:${VSS_AGENT_PORT}/api/v1/caption-content/{key}
+        then pass the text as captions_content to ead_agent.
+      - Example: user uploads "subtitles.srt" → key = md5("subtitles.srt")[:12]
 
     ## Context: If the user does not specify a video name, use the most recently uploaded video.
 

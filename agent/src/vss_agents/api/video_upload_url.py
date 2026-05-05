@@ -28,6 +28,9 @@ from nat.data_models.function import FunctionBaseConfig
 from pydantic import BaseModel
 from pydantic import Field
 
+from vss_agents.api.caption_upload import caption_key_for
+from vss_agents.api.caption_upload import is_caption_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,6 +103,15 @@ async def video_upload_url(config: VideoUploadURLConfig, _builder: Builder) -> A
             filename_without_ext = filename.rsplit(".", 1)[0] or filename
 
             embedding = video_upload_url_input.embedding
+
+            # Caption files (.srt, .vtt) must not go to VST — route them to the
+            # agent's own caption upload endpoint instead.
+            if is_caption_file(filename):
+                agent_base_url = config.agent_base_url.rstrip("/")
+                key = caption_key_for(filename)
+                url = f"{agent_base_url}/api/v1/caption-upload/{key}"
+                logger.info(f"Generated caption upload URL: {url} (key={key})")
+                return VideoUploadURLOutput(url=url)
 
             # If embedding is requested, return the agent URL for video search
             if embedding:

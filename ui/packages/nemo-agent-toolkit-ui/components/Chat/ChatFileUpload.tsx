@@ -76,7 +76,7 @@ export const ChatFileUpload: React.FC<ChatFileUploadProps> = ({
   onUploadError,
   onSendHiddenMessage,
   disabled = false,
-  accept = '.mp4,.mkv,video/mp4,video/x-matroska',
+  accept = '.mp4,.mkv,.srt,.vtt,video/mp4,video/x-matroska',
   children,
 }) => {
   const {
@@ -178,10 +178,10 @@ export const ChatFileUpload: React.FC<ChatFileUploadProps> = ({
     setSelectedFiles([]);
   }, []);
 
-  // Check if file is an allowed video format (only .mp4 and .mkv)
+  // Check if file is an allowed format: video (.mp4, .mkv) or caption (.srt, .vtt)
   const isAllowedVideoFile = useCallback((file: File) => {
-    const allowedExtensions = /\.(mp4|mkv)$/i;
-    const allowedMimeTypes = ['video/mp4', 'video/x-matroska'];
+    const allowedExtensions = /\.(mp4|mkv|srt|vtt)$/i;
+    const allowedMimeTypes = ['video/mp4', 'video/x-matroska', 'text/vtt', 'application/x-subrip'];
     return allowedExtensions.test(file.name) || allowedMimeTypes.includes(file.type);
   }, []);
 

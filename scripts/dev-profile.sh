@@ -1356,6 +1356,23 @@ function state_up() {
       fi
       echo "[INFO] EAD agent image build complete: ${_ead_image}"
     fi
+
+    # Build the custom EAD UI image with .srt/.vtt caption file upload support.
+    _ead_ui_image="vss-ui-ead:${_ead_version}"
+    _ead_ui_dockerfile="${deployment_directory}/../ui/Dockerfile"
+    if [[ "${dry_run}" == "true" ]]; then
+      echo "[DRY-RUN] docker build -f ${_ead_ui_dockerfile} -t ${_ead_ui_image} ${_ead_context}"
+    else
+      echo "[INFO] Building custom EAD UI image: ${_ead_ui_image} ..."
+      if ! docker build \
+        -f "${_ead_ui_dockerfile}" \
+        -t "${_ead_ui_image}" \
+        "${_ead_context}"; then
+        echo "[ERROR] EAD UI image build failed. Aborting."
+        exit 1
+      fi
+      echo "[INFO] EAD UI image build complete: ${_ead_ui_image}"
+    fi
   fi
 
   # Docker compose up

@@ -168,6 +168,22 @@ rebuild_ead_agent() {
   echo "[INFO] Done: vss-agent-ead:${version}"
 }
 
+# Rebuild the custom vss-ui-ead Docker image after updating UI source.
+# Run when ui/ changes (e.g., file type accept changes, branding).
+rebuild_ead_ui() {
+  local repo="$HOME/NvdVssEad"
+  local version
+  version=$(grep "^VSS_AGENT_VERSION=" \
+    "$repo/deployments/developer-workflow/dev-profile-ead/.env" 2>/dev/null \
+    | cut -d'=' -f2- | tr -d '"' | head -1)
+  version="${version:-3.1.0}"
+  echo "[INFO] Removing cached image vss-ui-ead:${version} ..."
+  docker rmi "vss-ui-ead:${version}" 2>/dev/null || true
+  echo "[INFO] Building vss-ui-ead:${version} (this takes ~5 min) ..."
+  docker build -f "$repo/ui/Dockerfile" -t "vss-ui-ead:${version}" "$repo"
+  echo "[INFO] Done: vss-ui-ead:${version}"
+}
+
 # Show the status of all EAD-profile containers at a glance.
 ead_status() {
   docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" \

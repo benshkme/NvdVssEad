@@ -180,7 +180,7 @@ rebuild_ead_ui() {
   echo "[INFO] Removing cached image vss-ui-ead:${version} ..."
   docker rmi "vss-ui-ead:${version}" 2>/dev/null || true
   echo "[INFO] Building vss-ui-ead:${version} (this takes ~5 min) ..."
-  docker build -f "$repo/ui/Dockerfile" -t "vss-ui-ead:${version}" "$repo"
+  docker build --no-cache -f "$repo/ui/Dockerfile" -t "vss-ui-ead:${version}" "$repo"
   echo "[INFO] Done: vss-ui-ead:${version}"
 }
 

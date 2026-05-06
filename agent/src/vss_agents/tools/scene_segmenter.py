@@ -14,29 +14,31 @@
 # limitations under the License.
 
 """
-Scene Segmenter Tool — divides a video into timed segments for EAD processing.
+Scene Segmenter Tool — content-driven segmentation for EAD processing.
 
-Sensitivity parameter (0.0–1.0) controls segment granularity:
-  1.0 (maximum) →  ~5s chunks  — one description every ~5 seconds
-  0.75 (high)   → ~10s chunks
-  0.5  (medium) → ~24s chunks  — default
-  0.25 (low)    → ~55s chunks
-  0.0  (minimum)→ ~120s chunks — one description every 2 minutes
+Rather than dividing the video into equal time chunks, this tool uses the
+VLM to detect *where* significant visual changes occur and creates segments
+only at those change points. This produces far fewer, more meaningful
+segments than time-based chunking.
 
-When a parsed captions JSON is provided (output of caption_parser), each
-segment is annotated with the overlapping subtitle text, giving the VLM
-dialogue context during visual description.
+The video is probed in windows (probe_window_seconds, default 60s).
+For each window, the VLM returns timestamps of detected changes. These
+become segment boundaries. The opening scene (t=0) is always included.
 
-The tool calls vst_video_duration to determine total video length, then
-computes uniform segments of chunk_duration seconds. The final segment
-absorbs any remainder shorter than half a chunk to avoid very short tail
-segments.
+Sensitivity (0.0–1.0) controls what counts as "significant":
+  1.0 (maximum): any visual change — new text, label, camera shift
+  0.75 (high):   clear changes — new slide, person, scene cut
+  0.5  (medium): meaningful transitions — new content, subject change  ← default
+  0.25 (low):    major transitions only — scene cuts, new presenter
+  0.0  (minimum): hard cuts and large content changes only
+
+Result: a 30-minute video typically produces 10–40 segments rather than
+75 equal-time chunks, with descriptions only when something actually changes.
 """
-
 
 import json
 import logging
-import math
+import re
 from collections.abc import AsyncGenerator
 
 from nat.builder.builder import Builder
@@ -49,29 +51,121 @@ from pydantic import Field
 
 from vss_agents.data_models.ead import ParsedCaptions
 from vss_agents.data_models.ead import SceneSegment
-from vss_agents.data_models.ead import sensitivity_to_chunk_duration
+from vss_agents.data_models.ead import sensitivity_to_change_description
 
 logger = logging.getLogger(__name__)
 
 _SENSITIVITY_DEFAULT = 0.5
+_PROBE_WINDOW_DEFAULT = 60.0   # seconds per VLM change-detection call
+_DESC_WINDOW_DEFAULT = 20.0    # max seconds passed to VLM for description
+_MIN_SEGMENT_GAP = 2.0         # ignore detected changes closer than this (seconds)
+
+
+def _build_change_detection_prompt(
+    clip_duration: float,
+    sensitivity: float,
+    caption_context: str = "",
+) -> str:
+    """Prompt asking the VLM to return JSON timestamps of visual changes."""
+    change_desc = sensitivity_to_change_description(sensitivity)
+    caption_note = ""
+    if caption_context.strip():
+        preview = caption_context.strip()[:200]
+        caption_note = (
+            f"\nAudio/dialogue in this clip (for context — do NOT flag speech as visual changes): "
+            f'"{preview}"\n'
+        )
+
+    return f"""\
+You are analyzing a {clip_duration:.0f}-second video clip to identify visual change points \
+for Extended Audio Description (EAD).
+{caption_note}
+Identify every timestamp (in seconds from the START of this clip) where \
+{change_desc}.
+
+SIGNIFICANT CHANGES that warrant a new EAD cue:
+• Hard scene cut or transition to a different location or setting
+• New slide, diagram, or presentation content appearing on screen
+• Text labels, title cards, lower-thirds, or on-screen graphics appearing
+• Presenter switching to a new demonstration or subject
+• New person appearing or significant change in who is on screen
+• Switch between speaker view and shared-screen / presentation content
+
+NOT significant — do NOT report:
+• The same scene continuing with the speaker talking
+• Normal gestures, head movement, or minor repositioning
+• Brief pauses or cuts that return immediately to the same scene
+• Same slide content with no new visual information
+
+Return ONLY a valid JSON array of decimal timestamps in seconds from the start of this clip.
+Return [] if no significant changes occur.
+
+Examples:
+  [4.5, 18.0, 31.2]   ← changes detected at those offsets
+  []                   ← no significant changes in this clip\
+"""
+
+
+def _parse_change_timestamps(raw: str) -> list[float]:
+    """Extract a list of floats from a possibly noisy VLM response."""
+    if not raw:
+        return []
+    # Try to find a JSON array anywhere in the response
+    match = re.search(r"\[([^\]]*)\]", raw)
+    if not match:
+        return []
+    try:
+        values = json.loads("[" + match.group(1) + "]")
+        return sorted({float(v) for v in values if isinstance(v, (int, float)) and v >= 0})
+    except (json.JSONDecodeError, ValueError):
+        return []
+
+
+def _merge_close_boundaries(boundaries: list[float], min_gap: float) -> list[float]:
+    """Remove change points that are too close together."""
+    if not boundaries:
+        return []
+    merged = [boundaries[0]]
+    for b in boundaries[1:]:
+        if b - merged[-1] >= min_gap:
+            merged.append(b)
+    return merged
 
 
 class SceneSegmenterConfig(FunctionBaseConfig, name="scene_segmenter"):
-    """Configuration for the Scene Segmenter tool."""
+    """Configuration for the content-driven Scene Segmenter tool."""
 
     default_sensitivity: float = Field(
         default=_SENSITIVITY_DEFAULT,
         ge=0.0,
         le=1.0,
-        description=(
-            "Default sensitivity when no override is provided in the input. "
-            "0.0 = minimum (large segments, only major changes), "
-            "1.0 = maximum (small segments, every subtle change)."
-        ),
+        description="Default sensitivity (0.0–1.0) controlling what changes trigger a new segment.",
     )
     duration_tool: str = Field(
         default="vst_video_duration",
-        description="Name of the VST duration tool used to retrieve total video length.",
+        description="Tool to retrieve total video duration.",
+    )
+    video_understanding_tool: str = Field(
+        default="video_understanding",
+        description="VLM tool used to detect change timestamps within each probe window.",
+    )
+    probe_window_seconds: float = Field(
+        default=_PROBE_WINDOW_DEFAULT,
+        gt=10.0,
+        description=(
+            "Duration of each probe window (seconds). The VLM analyzes the video in "
+            "chunks of this length to find change points. Larger = fewer VLM calls "
+            "but may miss rapid changes."
+        ),
+    )
+    max_description_window_seconds: float = Field(
+        default=_DESC_WINDOW_DEFAULT,
+        gt=5.0,
+        description=(
+            "Maximum seconds of video passed to the VLM per description call. "
+            "Caps the analysis window for very long segments so the VLM only "
+            "sees the start of the new scene, not the entire segment."
+        ),
     )
 
     model_config = {"extra": "forbid"}
@@ -80,161 +174,159 @@ class SceneSegmenterConfig(FunctionBaseConfig, name="scene_segmenter"):
 class SceneSegmenterInput(BaseModel):
     """Input for the Scene Segmenter tool."""
 
-    sensor_id: str = Field(
-        ...,
-        min_length=1,
-        description="The sensor ID or video filename in VST to segment.",
-    )
+    sensor_id: str = Field(..., min_length=1, description="The sensor ID or video filename in VST.")
     sensitivity: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
         description=(
-            "Segmentation sensitivity (0.0–1.0). Overrides the config default when provided. "
-            "Higher values produce shorter, more granular segments; "
-            "lower values produce longer, broader segments. "
-            "Omit to use the profile default (0.5 = medium)."
+            "Change sensitivity (0.0–1.0). Controls what visual differences trigger "
+            "a new EAD segment. Higher = more sensitive, more segments. "
+            "Defaults to the profile config value when omitted."
         ),
     )
     captions_json: str | None = Field(
         default=None,
-        description=(
-            "Optional JSON output from the caption_parser tool (a ParsedCaptions object). "
-            "When provided, each segment is annotated with the overlapping subtitle text "
-            "to give the VLM dialogue context during description generation."
-        ),
+        description="Optional JSON output from caption_parser for dialogue context.",
     )
 
     model_config = {"extra": "forbid"}
 
 
-def _build_segments(
-    total_duration: float,
-    chunk_duration: float,
-    captions: ParsedCaptions | None,
-) -> list[SceneSegment]:
-    """
-    Divide total_duration into fixed-size segments of chunk_duration seconds.
-
-    The final segment absorbs any remainder < 0.5 * chunk_duration so we
-    don't emit very short trailing segments.
-    """
-    if total_duration <= 0:
-        return []
-
-    segments: list[SceneSegment] = []
-    n_full = int(total_duration // chunk_duration)
-    remainder = total_duration - n_full * chunk_duration
-
-    # If the remainder is at least half a chunk, keep it as its own segment
-    include_tail = remainder >= chunk_duration * 0.5
-
-    boundaries: list[float] = [i * chunk_duration for i in range(n_full + 1)]
-    if include_tail and remainder > 0:
-        boundaries.append(total_duration)
-    elif n_full > 0:
-        # Extend last boundary to cover the short remainder
-        boundaries[-1] = total_duration
-
-    for i in range(len(boundaries) - 1):
-        start = boundaries[i]
-        end = boundaries[i + 1]
-        duration = end - start
-
-        caption_context = ""
-        if captions:
-            caption_context = captions.text_in_range(start, end)
-
-        segments.append(
-            SceneSegment(
-                index=i,
-                start_seconds=round(start, 3),
-                end_seconds=round(end, 3),
-                duration=round(duration, 3),
-                caption_context=caption_context,
-            )
-        )
-
-    return segments
-
-
 @register_function(config_type=SceneSegmenterConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
 async def scene_segmenter(config: SceneSegmenterConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:
-    """Scene Segmenter — divides a video into timed segments for EAD processing."""
+    """Scene Segmenter — content-driven segmentation using VLM change detection."""
 
     async def _scene_segmenter(input: SceneSegmenterInput) -> str:
         """
-        Divide a video into timed segments suitable for Extended Audio Description generation.
+        Segment a video into EAD processing units by detecting actual visual changes.
 
-        The sensitivity parameter (0.0–1.0) controls how granular the segmentation is:
-          - 1.0 (maximum): ~5s segments, suitable for content with rapid visual changes
-          - 0.75 (high):  ~10s segments
-          - 0.5  (medium): ~24s segments  — good default for most content
-          - 0.25 (low):   ~55s segments
-          - 0.0  (minimum): ~120s segments, suitable for slow-paced documentary content
+        Unlike fixed-duration chunking, this tool probes the video using the VLM to
+        find where significant visual changes occur (scene cuts, new slides, text
+        appearing, presenter changes, etc.) and creates segment boundaries only at
+        those points.
 
-        If captions_json is provided (output of caption_parser), each segment is
-        annotated with any subtitle text that overlaps its time range.
+        The opening scene (t=0) always produces a segment. Subsequent segments are
+        created only when the VLM detects a meaningful change.
+
+        Sensitivity controls the threshold:
+          1.0 → detect any change (subtle text, camera angle)
+          0.5 → detect clear changes (new slide, person, scene cut) — default
+          0.0 → detect major transitions only (hard cuts, large content changes)
 
         Returns:
             JSON array of SceneSegment objects, each with:
-              index, start_seconds, end_seconds, duration, caption_context
+              index, start_seconds, end_seconds, description_end_seconds, duration,
+              caption_context
         """
         sensitivity = input.sensitivity if input.sensitivity is not None else config.default_sensitivity
-        chunk_duration = sensitivity_to_chunk_duration(sensitivity)
 
-        logger.info(
-            f"Scene segmenter: sensor='{input.sensor_id}', sensitivity={sensitivity:.2f}, "
-            f"chunk_duration={chunk_duration:.1f}s"
-        )
-
-        # Get total video duration
+        # Get total duration
         duration_tool = await builder.get_tool(config.duration_tool, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
         duration_result = await duration_tool.ainvoke(input={"sensor_id": input.sensor_id})
-
-        # VST duration tool returns an object with a duration_seconds or similar field
         if hasattr(duration_result, "duration_seconds"):
             total_duration = float(duration_result.duration_seconds)
         elif hasattr(duration_result, "duration"):
             total_duration = float(duration_result.duration)
         elif isinstance(duration_result, (int, float)):
             total_duration = float(duration_result)
-        elif isinstance(duration_result, str):
-            # May be a JSON string or plain number string
-            try:
-                parsed = json.loads(duration_result)
-                if isinstance(parsed, dict):
-                    total_duration = float(
-                        parsed.get("duration_seconds") or parsed.get("duration") or parsed.get("total_seconds", 0)
-                    )
-                else:
-                    total_duration = float(parsed)
-            except (json.JSONDecodeError, ValueError):
-                total_duration = float(duration_result)
         else:
-            total_duration = float(str(duration_result))
-
-        logger.info(f"Total video duration: {total_duration:.1f}s")
+            try:
+                parsed = json.loads(str(duration_result))
+                total_duration = float(
+                    parsed.get("duration_seconds") or parsed.get("duration") or parsed.get("total_seconds", 0)
+                    if isinstance(parsed, dict) else parsed
+                )
+            except (json.JSONDecodeError, ValueError):
+                total_duration = float(str(duration_result))
 
         if total_duration <= 0:
-            logger.warning(f"Video '{input.sensor_id}' has zero or negative duration — returning empty segment list")
+            logger.warning(f"Video '{input.sensor_id}' has zero or negative duration")
             return json.dumps([])
+
+        logger.info(
+            f"Scene segmenter: sensor='{input.sensor_id}', duration={total_duration:.1f}s, "
+            f"sensitivity={sensitivity:.2f}, probe_window={config.probe_window_seconds:.0f}s"
+        )
 
         # Parse captions if provided
         captions: ParsedCaptions | None = None
         if input.captions_json:
             try:
                 captions = ParsedCaptions.model_validate_json(input.captions_json)
-                logger.info(f"Using {captions.cue_count} caption cues for context injection")
+                logger.info(f"Using {captions.cue_count} caption cues for change-detection context")
             except Exception as e:
-                logger.warning(f"Failed to parse captions_json — proceeding without captions: {e}")
+                logger.warning(f"Failed to parse captions_json: {e}")
 
-        segments = _build_segments(total_duration, chunk_duration, captions)
+        # --- Step 1: VLM-based change detection ---
+        vu_tool = await builder.get_tool(config.video_understanding_tool, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
+        all_boundaries: list[float] = [0.0]  # always start with the opening
+
+        probe_start = 0.0
+        while probe_start < total_duration:
+            probe_end = min(probe_start + config.probe_window_seconds, total_duration)
+            clip_duration = probe_end - probe_start
+
+            caption_context = captions.text_in_range(probe_start, probe_end) if captions else ""
+            prompt = _build_change_detection_prompt(clip_duration, sensitivity, caption_context)
+
+            try:
+                result = await vu_tool.ainvoke(
+                    input={
+                        "sensor_id": input.sensor_id,
+                        "start_timestamp": probe_start,
+                        "end_timestamp": probe_end,
+                        "user_prompt": prompt,
+                        "vlm_reasoning": False,
+                    }
+                )
+                raw = str(result).strip() if result else ""
+                relative_ts = _parse_change_timestamps(raw)
+                # Convert relative timestamps to absolute
+                absolute_ts = [probe_start + t for t in relative_ts if t < clip_duration]
+                all_boundaries.extend(absolute_ts)
+                logger.info(
+                    f"Probe [{probe_start:.0f}s–{probe_end:.0f}s]: "
+                    f"detected {len(absolute_ts)} change(s) → {[f'{t:.1f}s' for t in absolute_ts]}"
+                )
+            except Exception as e:
+                logger.warning(f"Change detection failed for [{probe_start:.0f}–{probe_end:.0f}s]: {e}")
+
+            probe_start = probe_end
+
+        # --- Step 2: Build segments from boundaries ---
+        # Sort, deduplicate, remove too-close points, add video end
+        all_boundaries = sorted(set(all_boundaries))
+        all_boundaries = _merge_close_boundaries(all_boundaries, _MIN_SEGMENT_GAP)
+        if not all_boundaries or all_boundaries[0] > 0.1:
+            all_boundaries.insert(0, 0.0)
+        all_boundaries.append(total_duration)
+
+        segments: list[SceneSegment] = []
+        for i in range(len(all_boundaries) - 1):
+            start = round(all_boundaries[i], 3)
+            end = round(all_boundaries[i + 1], 3)
+            if end <= start:
+                continue
+            duration = round(end - start, 3)
+            # Cap the description window — VLM only sees the start of each new scene
+            desc_end = round(min(end, start + config.max_description_window_seconds), 3)
+            cap_ctx = captions.text_in_range(start, desc_end) if captions else ""
+
+            segments.append(SceneSegment(
+                index=i,
+                start_seconds=start,
+                end_seconds=end,
+                duration=duration,
+                description_end_seconds=desc_end,
+                caption_context=cap_ctx,
+            ))
+
         logger.info(
-            f"Produced {len(segments)} segments "
-            f"(chunk={chunk_duration:.1f}s, sensitivity={sensitivity:.2f})"
+            f"Content-driven segmentation complete: {len(segments)} segments "
+            f"from {len(all_boundaries) - 1} boundaries "
+            f"(sensitivity={sensitivity:.2f})"
         )
-
         return json.dumps([seg.model_dump() for seg in segments], indent=2)
 
     yield FunctionInfo.create(

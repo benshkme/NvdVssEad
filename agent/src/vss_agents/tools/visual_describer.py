@@ -339,7 +339,10 @@ async def visual_describer(config: VisualDescriberConfig, builder: Builder) -> A
                     input={
                         "sensor_id": input.sensor_id,
                         "start_timestamp": segment.start_seconds,
-                        "end_timestamp": segment.end_seconds,
+                        # Use description_end_seconds (capped window) so the VLM
+                        # only sees the start of the new scene, not the entire
+                        # (potentially very long) segment.
+                        "end_timestamp": segment.description_end_seconds,
                         "user_prompt": user_prompt,
                         "vlm_reasoning": use_reasoning,
                     }

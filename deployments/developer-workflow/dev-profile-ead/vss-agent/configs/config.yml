@@ -239,15 +239,19 @@ functions:
   scene_segmenter:
     _type: scene_segmenter
     duration_tool: vst_video_duration
-    # Default sensitivity: 0.5 (medium) → ~24s segments.
-    # Users can override per-request via the sensitivity input field.
-    # Sensitivity scale:
-    #   1.0 (maximum) →  ~5s segments
-    #   0.75 (high)   → ~10s segments
-    #   0.5  (medium) → ~24s segments  ← default
-    #   0.25 (low)    → ~55s segments
-    #   0.0  (minimum)→ ~120s segments
+    video_understanding_tool: video_understanding
+    # Sensitivity controls what visual changes trigger a new EAD segment.
+    # Higher = more sensitive = more segments. Lower = only major transitions.
+    #   1.0 → any change (subtle text, camera angle)
+    #   0.5 → clear changes (new slide, person, scene cut)  ← default
+    #   0.0 → major transitions only (hard cuts, large content changes)
     default_sensitivity: 0.5
+    # Probe window: how many seconds the VLM analyzes per change-detection call.
+    # Larger = fewer VLM calls but may miss rapid changes.
+    probe_window_seconds: 60.0
+    # Max seconds passed to VLM per description call.
+    # Caps the analysis window for segments that continue unchanged for minutes.
+    max_description_window_seconds: 20.0
 
   visual_describer:
     _type: visual_describer

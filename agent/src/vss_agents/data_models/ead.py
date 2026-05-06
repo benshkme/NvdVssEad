@@ -70,8 +70,17 @@ class SceneSegment(BaseModel):
 
     index: int = Field(..., ge=0, description="Zero-based segment index")
     start_seconds: float = Field(..., ge=0.0, description="Segment start time in seconds")
-    end_seconds: float = Field(..., ge=0.0, description="Segment end time in seconds")
+    end_seconds: float = Field(..., ge=0.0, description="Segment end time in seconds (used for WebVTT cue timing)")
     duration: float = Field(..., gt=0.0, description="Segment duration in seconds")
+    description_end_seconds: float = Field(
+        ...,
+        ge=0.0,
+        description=(
+            "End of the window actually passed to the VLM for description. "
+            "Capped at start_seconds + max_description_window to avoid passing "
+            "very long clips to the VLM when a scene continues unchanged for minutes."
+        ),
+    )
     caption_context: str = Field(
         default="",
         description=(

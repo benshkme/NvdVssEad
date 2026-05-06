@@ -194,8 +194,28 @@ FUNCBLOCK
 
 MARKER="# EAD deployment helpers (added by scripts/setup_ead_instance.sh)"
 
+# Always replace the functions block so new functions (like rebuild_ead_ui)
+# are picked up when the script is re-run on an existing instance.
 if grep -qF "$MARKER" "$BASHRC" 2>/dev/null; then
-  _info "Shell functions already present in $BASHRC — skipping."
+  # Remove old block from its marker line to the closing brace of the last function
+  python3 - "$BASHRC" "$MARKER" <<'PYEOF'
+import sys, pathlib
+bashrc = pathlib.Path(sys.argv[1])
+marker = sys.argv[2]
+lines = bashrc.read_text().splitlines(keepends=True)
+# Find the marker line
+start = next((i for i, l in enumerate(lines) if marker in l), None)
+if start is None:
+    sys.exit(0)
+# Find the end: last closing brace at column 0 after start
+end = start
+for i in range(start, len(lines)):
+    if lines[i].startswith('}'):
+        end = i
+bashrc.write_text(''.join(lines[:start] + lines[end+1:]))
+PYEOF
+  printf '\n%s\n' "$FUNCTIONS_BLOCK" >> "$BASHRC"
+  _info "Shell functions updated in $BASHRC"
 else
   printf '\n%s\n' "$FUNCTIONS_BLOCK" >> "$BASHRC"
   _info "Shell functions added to $BASHRC"

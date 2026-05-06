@@ -417,7 +417,7 @@ export const VideoManagementComponent: React.FC<VideoManagementComponentProps> =
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".mp4,.mkv"
+        accept=".mp4,.mkv,.srt,.vtt"
         className="hidden"
         onChange={(e) => {
           const files = e.target.files;

@@ -67,7 +67,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onFilesSelected, enableV
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".mp4,.mkv"
+        accept=".mp4,.mkv,.srt,.vtt"
         onChange={handleFileInputChange}
         className="hidden"
       />
@@ -110,7 +110,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onFilesSelected, enableV
           {isDragOver ? 'Drop files to upload' : 'Drop files here'}
         </p>
         <p className="text-sm mb-2 text-gray-500 dark:text-gray-400">
-          Movie Files (mp4, mkv)
+          Video &amp; Caption Files (mp4, mkv, srt, vtt)
         </p>
       </div>
     </div>

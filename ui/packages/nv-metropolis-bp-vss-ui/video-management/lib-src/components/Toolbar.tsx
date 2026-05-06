@@ -97,7 +97,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".mp4,.mkv"
+        accept=".mp4,.mkv,.srt,.vtt"
         onChange={handleFileInputChange}
         className="hidden"
       />

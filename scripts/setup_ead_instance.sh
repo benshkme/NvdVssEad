@@ -182,6 +182,11 @@ rebuild_ead_ui() {
   echo "[INFO] Building vss-ui-ead:${version} (this takes ~5 min) ..."
   docker build --no-cache -f "$repo/ui/Dockerfile" -t "vss-ui-ead:${version}" "$repo"
   echo "[INFO] Done: vss-ui-ead:${version}"
+  echo "[INFO] Recreating UI container with new image..."
+  cd "$repo/deployments" && docker compose \
+    --env-file "developer-workflow/dev-profile-ead/generated.env" \
+    up --force-recreate --detach metropolis-vss-ui
+  echo "[INFO] UI container recreated — http://$(curl -s --max-time 3 ifconfig.me 2>/dev/null):3000"
 }
 
 # Show the status of all EAD-profile containers at a glance.

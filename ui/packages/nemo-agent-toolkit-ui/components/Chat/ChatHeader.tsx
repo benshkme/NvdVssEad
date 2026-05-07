@@ -132,7 +132,7 @@ export const ChatHeader = ({ webSocketModeRef = {}, onSend }: ChatHeaderProps) =
                 
                 {/* File type hints */}
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Movie Files (mp4, mkv)
+                  Video (mp4, mkv) · Captions (srt, vtt)
                 </p>
               </div>
             </div>

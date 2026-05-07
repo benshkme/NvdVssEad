@@ -206,7 +206,7 @@ export const AgentUploadDialog: React.FC<AgentUploadDialogProps> = ({
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Click or drag files here
               </span>
-              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Movie Files (mp4, mkv)</div>
+              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Video (mp4, mkv) · Captions (srt, vtt)</div>
             </div>
           )}
         </div>

@@ -192,7 +192,7 @@ export const ChatFileUpload: React.FC<ChatFileUploadProps> = ({
     const hasInvalidFiles = allFiles.length > validFiles.length;
     
     if (hasInvalidFiles) {
-      toast.error('Please drop video files only (mp4, mkv)');
+      toast.error('Unsupported file type. Accepted: mp4, mkv (video) or srt, vtt (captions)');
     }
     
     if (validFiles.length > 0) {
@@ -845,7 +845,8 @@ export const ChatFileUpload: React.FC<ChatFileUploadProps> = ({
                     {isDraggingMedia ? 'Drop files here' : 'Click or drag files here'}
                   </span>
                   <div className="mt-2 flex flex-wrap justify-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-700">Movie Files (mp4, mkv)</span>
+                    <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-700">Video (mp4, mkv)</span>
+                    <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-700">Captions (srt, vtt)</span>
                   </div>
                 </div>
               )}

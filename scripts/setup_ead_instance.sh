@@ -80,6 +80,18 @@ _patch_env() {
 _patch_env "HOST_IP"     "'${PRIVATE_IP}'"
 _patch_env "EXTERNAL_IP" "${PUBLIC_IP}"
 
+# Ensure the persistent data directory exists on the EBS volume.
+# NIM model weights and uploaded videos are stored here so they
+# survive run_vss_ead redeployments.
+DATA_DIR=$(grep "^MDX_DATA_DIR=" "$ENV_FILE" | cut -d"'" -f2 | tr -d '"')
+DATA_DIR="${DATA_DIR:-/data/vss-ead}"
+if [[ ! -d "$DATA_DIR" ]]; then
+  mkdir -p "$DATA_DIR"
+  _info "Created data directory: $DATA_DIR"
+else
+  _info "Data directory already exists: $DATA_DIR"
+fi
+
 # =============================================================================
 # 3. NGC API key
 # =============================================================================
